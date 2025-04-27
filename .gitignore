@@ -1,0 +1,4 @@
+*.env
+*.vscode
+/davi_venv
+src/__pycache__
