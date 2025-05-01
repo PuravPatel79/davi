@@ -2,3 +2,4 @@
 *.vscode
 /davi_venv
 src/__pycache__
+*.html
