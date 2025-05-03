@@ -1,22 +1,47 @@
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
+import traceback
 from typing import Dict, Any, Optional, List
 
 class Visualizer:
     def __init__(self, data_processor):
-        self.data_processor = data_processor
+        # Store the data_processor instance if needed for other methods,
+        # but create_visualization should primarily use the passed df.
+        self.data_processor = data_processor 
     
-    def create_visualization(self, viz_type: str, x: Optional[str] = None, 
-                            y: Optional[str] = None, color: Optional[str] = None, 
-                            title: Optional[str] = None, **kwargs) -> go.Figure:
-        """Create visualization based on type and parameters"""
-        if self.data_processor.dataframe is None:
-            return "No data loaded. Please load data first."
+    def create_visualization(self, viz_type: str, df: pd.DataFrame, 
+                            x: Optional[str] = None, y: Optional[str] = None, 
+                            color: Optional[str] = None, title: Optional[str] = None, 
+                            **kwargs) -> Optional[go.Figure]:
+        """Create visualization based on type and parameters using the provided dataframe.
         
-        df = self.data_processor.dataframe
+        Args:
+            viz_type: Type of chart (e.g., bar, scatter).
+            df: The pandas DataFrame to use for plotting (potentially preprocessed/aggregated).
+            x: Column name for the x-axis.
+            y: Column name for the y-axis.
+            color: Column name for coloring.
+            title: Title for the chart.
+            **kwargs: Additional arguments for Plotly Express functions.
+
+        Returns:
+            A Plotly Figure object if successful, None otherwise.
+        """
+        if df is None or df.empty:
+            print("Error: Cannot create visualization with empty or None dataframe.")
+            return None
         
+        # Validate columns exist in the passed dataframe
+        required_cols = [col for col in [x, y, color] if col is not None]
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            print(f"Error: Missing required columns in the provided dataframe: {missing_cols}. Available: {list(df.columns)}")
+            return None
+            
+        fig = None # Initialize fig to None
         try:
+            print(f"Visualizer attempting to create 	{viz_type}	 chart with columns: x={x}, y={y}, color={color}") # Debug print
             if viz_type == 'bar':
                 fig = px.bar(df, x=x, y=y, color=color, title=title, **kwargs)
             elif viz_type == 'line':
@@ -24,32 +49,59 @@ class Visualizer:
             elif viz_type == 'scatter':
                 fig = px.scatter(df, x=x, y=y, color=color, title=title, **kwargs)
             elif viz_type == 'histogram':
-                fig = px.histogram(df, x=x, title=title, **kwargs)
+                # Histogram typically only uses x
+                fig = px.histogram(df, x=x, color=color, title=title, **kwargs)
             elif viz_type == 'pie':
+                # Pie chart uses names (like x) and values (like y)
                 fig = px.pie(df, names=x, values=y, title=title, **kwargs)
             elif viz_type == 'box':
                 fig = px.box(df, x=x, y=y, color=color, title=title, **kwargs)
             elif viz_type == 'heatmap':
-                # For heatmap, we need to pivot the data
+                # For heatmap, we might need to pivot the passed df
                 if x and y and 'z' in kwargs:
                     z = kwargs.pop('z')
-                    pivot_df = df.pivot(index=y, columns=x, values=z)
-                    fig = px.imshow(pivot_df, title=title, **kwargs)
+                    if z not in df.columns:
+                         print(f"Error: Z-axis column 	{z}	 not found for heatmap.")
+                         return None
+                    try:
+                        pivot_df = df.pivot(index=y, columns=x, values=z)
+                        fig = px.imshow(pivot_df, title=title, **kwargs)
+                    except Exception as pivot_e:
+                        print(f"Error pivoting data for heatmap: {pivot_e}")
+                        return None
                 else:
-                    # Correlation heatmap
-                    corr_df = df.select_dtypes(include=['number']).corr()
-                    fig = px.imshow(corr_df, title=title or "Correlation Heatmap", **kwargs)
+                    # Attempt correlation heatmap on numeric columns of the passed df
+                    numeric_df = df.select_dtypes(include=['number'])
+                    if not numeric_df.empty:
+                        corr_df = numeric_df.corr()
+                        fig = px.imshow(corr_df, title=title or "Correlation Heatmap", **kwargs)
+                    else:
+                        print("Error: No numeric columns found in the provided data for correlation heatmap.")
+                        return None
             else:
-                return f"Visualization type '{viz_type}' not supported."
+                print(f"Visualization type '{viz_type}' not supported.")
+                return None
             
-            return fig
+            # Check if fig is a valid Plotly Figure before returning
+            if isinstance(fig, go.Figure):
+                print("Successfully created Plotly figure.")
+                return fig
+            else:
+                # This case should ideally not be reached if px functions work
+                print(f"Error: Plotly Express function for '{viz_type}' did not return a valid Figure object.")
+                return None
+                
         except Exception as e:
-            return f"Error creating visualization: {str(e)}"
+            print(f"Error creating visualization of type '{viz_type}': {str(e)}")
+            traceback.print_exc() # Print full traceback for debugging
+            return None
     
+    # recommend_visualization might still use self.data_processor if it's meant
+    # to recommend based on the *original* loaded data, which seems reasonable.
     def recommend_visualization(self, columns: List[str]) -> Dict[str, Any]:
-        """Recommend visualization type based on columns"""
+        """Recommend visualization type based on columns in the original dataset"""
         if self.data_processor.dataframe is None:
-            return "No data loaded. Please load data first."
+            return {"error": "No data loaded. Please load data first."}
         
         df = self.data_processor.dataframe
         metadata = self.data_processor.metadata
@@ -57,31 +109,32 @@ class Visualizer:
         # Check if columns exist
         for col in columns:
             if col not in df.columns:
-                return f"Column '{col}' not found in the dataset."
+                return {"error": f"Column '{col}' not found in the dataset."}
         
-        # Simple recommendation logic
+        # Simple recommendation logic (remains unchanged)
         if len(columns) == 1:
             col = columns[0]
             if col in metadata.get('numeric_columns', []):
                 return {'type': 'histogram', 'x': col}
             else:
-                return {'type': 'bar', 'x': col}
+                # Use count for categorical bar charts if y isn't specified
+                return {'type': 'bar', 'x': col} 
         
         elif len(columns) == 2:
             col1, col2 = columns
+            num_col1 = col1 in metadata.get('numeric_columns', [])
+            num_col2 = col2 in metadata.get('numeric_columns', [])
             
-            # Two numeric columns
-            if col1 in metadata.get('numeric_columns', []) and col2 in metadata.get('numeric_columns', []):
+            if num_col1 and num_col2:
                 return {'type': 'scatter', 'x': col1, 'y': col2}
-            
-            # One numeric, one categorical
-            elif col1 in metadata.get('numeric_columns', []) and col2 not in metadata.get('numeric_columns', []):
+            elif num_col1 and not num_col2:
                 return {'type': 'box', 'x': col2, 'y': col1}
-            elif col2 in metadata.get('numeric_columns', []) and col1 not in metadata.get('numeric_columns', []):
+            elif not num_col1 and num_col2:
                 return {'type': 'box', 'x': col1, 'y': col2}
-            
-            # Two categorical columns
-            else:
-                return {'type': 'heatmap', 'x': col1, 'y': col2}
+            else: # Two categorical
+                 # Heatmap of counts might be better, but requires aggregation logic here
+                 # For simplicity, maybe suggest a grouped bar chart or just return error
+                 return {"error": "Direct visualization for two categorical columns is complex. Try summarizing first."} 
+                 # Or potentially: {'type': 'bar', 'x': col1, 'color': col2} # Grouped bar
         
-        return "Could not determine appropriate visualization for the given columns."
+        return {"error": "Could not determine appropriate visualization for the given columns."}
