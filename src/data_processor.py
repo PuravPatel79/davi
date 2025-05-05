@@ -192,7 +192,7 @@ class DataProcessor:
 
         return filtered_df
 
-    def aggregate_data(self, group_by_columns: List[str], agg_specs: Dict[str, str]) -> pd.DataFrame:
+    def aggregate_data(self, group_by_columns: List[str], agg_specs: Dict[str, str], df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """Aggregate dataframe by grouping and applying aggregation functions.
 
         Args:
@@ -200,38 +200,44 @@ class DataProcessor:
             agg_specs: A dictionary where keys are the names for the aggregated columns
                        and values are the aggregation functions to apply (e.g., 'sum', 'mean', 'count', 'size').
                        Example: {'OrderQuantity': 'sum', 'OrderCount': 'size'}
+            df: Optional dataframe to perform aggregation on. If None, uses self.dataframe.
 
         Returns:
             A pandas DataFrame with the aggregated results.
         """
-        if self.dataframe is None:
-            raise ValueError("No data loaded yet.")
+        dataframe_to_agg = df if df is not None else self.dataframe # Decide which df to use
 
-        # Validate group_by columns
+        if dataframe_to_agg is None: # Check the one we intend to use
+            raise ValueError("No data loaded yet. Either load data first or provide a dataframe.")
+
+        # Validate group_by columns against the dataframe being used
         for col in group_by_columns:
-            if col not in self.dataframe.columns:
-                raise ValueError(f"Group by column '{col}' not found in dataframe.")
+            if col not in dataframe_to_agg.columns:
+                raise ValueError(f"Group by column '{col}' not found in the dataframe being aggregated.")
 
         try:
-            grouped_data = self.dataframe.groupby(group_by_columns)
+            grouped_data = dataframe_to_agg.groupby(group_by_columns)
             
             # Prepare aggregation dictionary for pandas
             pandas_agg_dict = {}
             for new_col_name, agg_func in agg_specs.items():
                 if agg_func.lower() != 'size':
                     original_col = new_col_name # Default assumption
-                    if original_col not in self.dataframe.columns:
+                    # Check if original_col exists in the dataframe being aggregated
+                    if original_col not in dataframe_to_agg.columns:
+                         # Try to infer original column if new name follows pattern like 'SumQuantity_sum'
                          if new_col_name.lower().endswith(agg_func.lower()):
                              potential_col = new_col_name[:-len(agg_func)]
-                             if potential_col in self.dataframe.columns:
+                             if potential_col in dataframe_to_agg.columns:
                                  original_col = potential_col
                              else:
-                                 raise ValueError(f"Could not determine original column for aggregation '{agg_func}' on '{new_col_name}'. Column '{original_col}' not found.")
+                                 raise ValueError(f"Could not determine original column for aggregation '{agg_func}' on '{new_col_name}'. Column '{original_col}' not found in dataframe.")
                          else:
-                             raise ValueError(f"Could not determine original column for aggregation '{agg_func}' on '{new_col_name}'. Column '{original_col}' not found.")
+                             raise ValueError(f"Could not determine original column for aggregation '{agg_func}' on '{new_col_name}'. Column '{original_col}' not found in dataframe.")
                     
-                    if original_col not in self.dataframe.columns:
-                         raise ValueError(f"Column '{original_col}' specified for aggregation '{agg_func}' not found.")
+                    # Final check if the determined original column exists
+                    if original_col not in dataframe_to_agg.columns:
+                         raise ValueError(f"Column '{original_col}' specified for aggregation '{agg_func}' not found in dataframe.")
                          
                     pandas_agg_dict[new_col_name] = pd.NamedAgg(column=original_col, aggfunc=agg_func.lower())
                 else:
@@ -241,7 +247,11 @@ class DataProcessor:
                 aggregated_df = grouped_data.agg(**pandas_agg_dict).reset_index()
             else:
                 # If only size was requested, or no other aggregations, get unique group keys
-                aggregated_df = grouped_data.first().reset_index()[group_by_columns] 
+                # Need to handle the case where grouped_data might be empty if dataframe_to_agg was empty
+                if not dataframe_to_agg.empty:
+                    aggregated_df = grouped_data.first().reset_index()[group_by_columns]
+                else:
+                    aggregated_df = pd.DataFrame(columns=group_by_columns) # Empty df with group columns
 
             size_specs = {name: func for name, func in agg_specs.items() if func.lower() == 'size'} 
             if size_specs:
@@ -250,13 +260,13 @@ class DataProcessor:
                     print("Warning: Multiple 'size' aggregations requested. Using name from first one.")
                 
                 # Merge size results with other aggregations if they exist
-                # Check if aggregated_df only contains group_by columns (case where only size was requested initially)
                 if set(aggregated_df.columns) == set(group_by_columns) and not pandas_agg_dict:
-                     aggregated_df = size_df # Replace with size results
+                     aggregated_df = size_df # Replace with size results if only size was requested
                 elif not aggregated_df.empty:
                      aggregated_df = pd.merge(aggregated_df, size_df, on=group_by_columns, how='left')
-                else: # Should not happen if group_by_columns is valid
+                elif not size_df.empty: # Handle case where only size was requested and df wasn't empty
                      aggregated_df = size_df
+                # If both aggregated_df and size_df are empty, aggregated_df remains empty df with group columns
 
             return aggregated_df
 

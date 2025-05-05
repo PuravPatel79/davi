@@ -35,15 +35,16 @@ def handle_informational_queries(agent):
             break  # Exit informational sub-loop
 
         print("\nProcessing your query...")
-        result = agent.process_query(query)
+        # Pass mode="informational"
+        result = agent.process_query(query, mode="informational")
         
         # Display result
         if result.get("success", False):
             print("\nResult:")
             print(result["message"])
-            # Check if a visualization was unexpectedly created
+            # Check if a visualization was unexpectedly created (shouldn't happen now)
             if result.get("visualization") is not None:
-                print("\nNote: A visualization was generated unexpectedly.")
+                print("\nWarning: A visualization was generated unexpectedly in informational mode.")
         else:
             print("\nError:")
             print(result.get("message", "Unknown error occurred"))
@@ -62,7 +63,7 @@ def generate_and_show_html_dashboard(visualizations):
 <head>
     <meta charset="utf-8" />
     <title>Visualization Dashboard</title>
-    // <script src='https://cdn.plot.ly/plotly-latest.min.js'></script>
+    <script src='https://cdn.plot.ly/plotly-latest.min.js'></script>
     <style>
         body { font-family: sans-serif; margin: 20px; }
         /* Style the container holding the plotly div */
@@ -84,9 +85,7 @@ def generate_and_show_html_dashboard(visualizations):
         # Check if it's a Plotly figure
         if hasattr(fig, "to_html") and hasattr(fig, "layout"):
             try:
-                # Get HTML div for the figure, excluding full HTML structure and redundant JS
-                # This relies on the single Plotly JS loaded in the <head>
-                # fig_div_html = fig.to_html(full_html=False, include_plotlyjs=False)
+                # Get HTML div for the figure, relying on the single Plotly JS loaded in the <head>
                 fig_div_html = fig.to_html(full_html=False, include_plotlyjs='cdn')                
                 
                 # Add title and a container for the figure's div
@@ -112,8 +111,6 @@ def generate_and_show_html_dashboard(visualizations):
     final_html = html_head + html_body_content + html_footer
     
     try:
-        # Use pio.write_html to leverage Plotly's file writing logic if needed,
-        # but here we construct manually which is often more flexible for multiple divs.
         with open(DASHBOARD_HTML_FILE, 'w', encoding='utf-8') as f:
             f.write(final_html)
         print(f"Dashboard saved to {DASHBOARD_HTML_FILE}")
@@ -150,7 +147,8 @@ def handle_visualization_requests(agent):
             continue # Go back to asking for input
 
         print("\nProcessing your visualization request...")
-        result = agent.process_query(query)
+        # Pass mode="visualization"
+        result = agent.process_query(query, mode="visualization")
         
         # Display result and store visualization
         if result.get("success", False):
@@ -166,8 +164,7 @@ def handle_visualization_requests(agent):
                     stored_visualizations.append(visualization)
                 else:
                     print("Note: The agent returned something for visualization, but it doesn't look like a Plotly figure. Not stored.")
-            else:
-                print("No visualization was generated for this request.")
+            # Removed the 'else' that printed 'No visualization generated' because the message already indicates success/failure
         else:
             print("\nError:")
             print(result.get("message", "Unknown error occurred"))
