@@ -54,9 +54,11 @@ INSTRUCTIONS:
   ],
   "aggregation": {{
     "group_by": ["group_column1"],
-    "agg_specs": {{ "AggregatedColumnName": "agg_func" }} // e.g., {{"TotalQuantity": "sum"}}
+    "agg_specs": {{ "OutputColumnName": {{ "agg_func": "sum|mean|count|...", "source_column": "ExactColumnNameFromDataset" }} }} 
+    // For agg_func 'size', source_column is not needed. e.g., {{"OrderCount": {{"agg_func": "size"}}}}
+    // Example: {{ "TotalQuantity": {{ "agg_func": "sum", "source_column": "OrderQuantity" }} }}
   }},
-  "sort_by": {{ "column": "column_to_sort", "ascending": false }},
+  "sort_by": {{ "column": "OutputColumnName", "ascending": false }}, // Sort by the new aggregated column name
   "limit": 1 // Optional: number of top results to return
 }}
 ```
@@ -148,7 +150,7 @@ USER QUERY:
                 if response_type == "visualization" and mode == "visualization":
                     return self._handle_visualization_request(parsed_plan)
                 elif response_type == "analysis" and mode == "informational":
-                    return self._handle_analysis_request(parsed_plan)
+                    return self._handle_analysis_request(parsed_plan, query, mode)
                 else:
                     # Mismatch between mode and response type, or unexpected type
                     print(f"Warning: Received JSON response type 	{response_type}	 which does not match requested mode 	{mode}	 or is unexpected.")
@@ -310,7 +312,7 @@ USER QUERY:
             traceback.print_exc()
             return {"success": False, "message": f"Error creating visualization: {str(e)}", "visualization": None}
 
-    def _handle_analysis_request(self, analysis_plan: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_analysis_request(self, analysis_plan: Dict[str, Any], query: str, mode: str) -> Dict[str, Any]:
         """Handle a complex analysis request using filtering, aggregation, sorting."""
         try:
             df = self.data_processor.get_data() # Start with original data
@@ -336,15 +338,140 @@ USER QUERY:
 
             # --- 2. Apply Aggregation --- 
             aggregation_plan = analysis_plan.get("aggregation")
+            df_before_agg = df.copy() # Save state before aggregation attempt
             if aggregation_plan and isinstance(aggregation_plan, dict):
                 group_by = aggregation_plan.get("group_by")
                 agg_specs = aggregation_plan.get("agg_specs")
                 if group_by and agg_specs:
                     print(f"Applying aggregation: group by {group_by}, specs {agg_specs}")
                     try:
-                        df = self.data_processor.aggregate_data(df=df, group_by_columns=group_by, agg_specs=agg_specs)
-                        print("Aggregation successful.")
-                    except Exception as agg_e:
+                        # Transform agg_specs from LLM format to a format data_processor expects
+                        # Expected LLM format: { "OutputName": { "agg_func": "sum", "source_column": "SourceColumn" } } or { "CountName": { "agg_func": "size" } }
+                        # Target format for data_processor: { "OutputName": {"source": "SourceColumn", "func": "sum"} } or { "CountName": "size" }
+                        processed_agg_specs = {}
+                        for output_col, spec_dict in agg_specs.items():
+                            if isinstance(spec_dict, dict):
+                                agg_func = spec_dict.get("agg_func")
+                                if not agg_func:
+                                    print(f"Warning: Aggregation spec for 	{output_col}	 is missing 	agg_func	. Skipping.")
+                                    continue
+                                
+                                agg_func_lower = agg_func.lower()
+                                if agg_func_lower == 'size':
+                                    processed_agg_specs[output_col] = 'size'
+                                else:
+                                    source_col = spec_dict.get("source_column")
+                                    if not source_col:
+                                        print(f"Warning: Aggregation spec for 	{output_col}	 (	{agg_func}	) is missing 	 source_column	. Skipping.")
+                                        continue
+                                    processed_agg_specs[output_col] = {'source': source_col, 'func': agg_func_lower}
+                            else:
+                                print(f"Warning: Invalid format for aggregation spec 	{output_col}	. Expected a dictionary. Skipping.")
+
+                        if not processed_agg_specs:
+                            print("Warning: No valid aggregation specs found after parsing. Skipping aggregation.")
+                        else:
+                            print(f"Processed aggregation specs for data_processor: {processed_agg_specs}")
+                            # Pass the processed specs to the data processor
+                            df = self.data_processor.aggregate_data(df=df, group_by_columns=group_by, agg_specs=processed_agg_specs)
+                            print("Aggregation successful.")
+                            
+                    except ValueError as agg_ve:
+                        # Check if it's the specific source column error from data_processor
+                        error_message = str(agg_ve)
+                        if "Source column" in error_message and "not found in dataframe" in error_message:
+                            print(f"Aggregation failed due to missing source column: {error_message}")
+                            print("Attempting LLM self-correction...")
+                            
+                            # Construct correction prompt
+                            correction_prompt = f"""
+                            The previous attempt to execute the data analysis plan failed during aggregation with this error:
+                            `{error_message}`
+                            
+                            The original user query was: `{query}`
+                            The dataset columns are: {self.data_processor.metadata.get("columns", [])}
+                            The previous JSON plan was:
+                            ```json
+                            {json.dumps(analysis_plan, indent=2)}
+                            ```
+                            
+                            Please provide a corrected JSON plan. Pay close attention to the `source_column` within the `agg_specs` to ensure it matches an existing column from the list above, based on the original query intent. Respond ONLY with the corrected JSON object.
+                            """
+                            
+                            try:
+                                corrected_plan_str = self._get_llm_plan(correction_prompt, mode) # Use original mode
+                                corrected_plan = self._parse_llm_response(corrected_plan_str)
+                                
+                                if corrected_plan and corrected_plan.get("response_type") == "analysis":
+                                    print("Received corrected plan from LLM. Retrying aggregation...")
+                                    # Extract corrected aggregation specs
+                                    corrected_aggregation_plan = corrected_plan.get("aggregation")
+                                    if corrected_aggregation_plan and isinstance(corrected_aggregation_plan, dict):
+                                        corrected_agg_specs_raw = corrected_aggregation_plan.get("agg_specs")
+                                        if corrected_agg_specs_raw:
+                                            # Reprocess the corrected specs
+                                            corrected_processed_specs = {}
+                                            for output_col, spec_dict in corrected_agg_specs_raw.items():
+                                                # (Same parsing logic as before)
+                                                if isinstance(spec_dict, dict):
+                                                    agg_func = spec_dict.get("agg_func")
+                                                    if not agg_func: continue
+                                                    agg_func_lower = agg_func.lower()
+                                                    if agg_func_lower == 'size':
+                                                        corrected_processed_specs[output_col] = 'size'
+                                                    else:
+                                                        source_col = spec_dict.get("source_column")
+                                                        if not source_col: continue
+                                                        corrected_processed_specs[output_col] = {"source": source_col, "func": agg_func_lower}
+                                                # else: skip invalid format
+                                            
+                                            if corrected_processed_specs:
+                                                print(f"Processed corrected specs: {corrected_processed_specs}")
+                                                # Retry aggregation with corrected specs
+                                                df = self.data_processor.aggregate_data(df=df_before_agg, group_by_columns=group_by, agg_specs=corrected_processed_specs)
+                                                print("Aggregation successful after self-correction.")
+                                                # Continue with sorting, limit etc. - need to restructure flow slightly or use flags
+                                                # For now, let's assume success means we can proceed past the except block
+                                                # We might need to re-apply sorting/limit if they were defined in the corrected plan too
+                                                # Let's just break out of the except block for now if successful
+                                                pass # Continue execution after the except block
+                                            else:
+                                                 raise ValueError("LLM self-correction provided invalid or empty agg_specs.")
+                                        else:
+                                            raise ValueError("LLM self-correction plan missing agg_specs.")
+                                    else:
+                                         # If no aggregation in corrected plan, maybe it decided it wasn't needed?
+                                         # For now, treat as failure to correct aggregation.
+                                         raise ValueError("LLM self-correction plan missing aggregation section.")
+                                else:
+                                    raise ValueError("LLM self-correction did not return a valid analysis JSON plan.")
+
+                            except Exception as correction_e:
+                                print(f"LLM self-correction failed: {str(correction_e)}")
+                                traceback.print_exc()
+                                
+                                # --- User Clarification Fallback ---
+                                user_clarification_text = (
+                                    f"I encountered an issue while trying to aggregate the data for your query: 	{query}	\n"
+                                    f"The initial error was: 	{error_message}	\n"
+                                    f"I asked the AI to correct the plan, but that also failed with error: 	{str(correction_e)}	\n\n"
+                                    f"The available columns are: {self.data_processor.metadata.get("columns", [])}\n\n"
+                                    f"Could you please specify which column should be used for the aggregation (e.g., sum, count)? Or perhaps rephrase your query to be more specific about the column names?"
+                                )
+                                
+                                # Ask the user for clarification. We cannot directly use the response here,
+                                # so we ask them to re-query.
+                                # In a more advanced setup, we might store state and handle the response.
+                                return {"success": False, "message": user_clarification_text, "visualization": None, "ask_user": True} # Add a flag to indicate we need user input
+                        else:
+                            # It was a different ValueError, re-raise or handle differently
+                            print(f"Non-source-column ValueError during aggregation: {error_message}")
+                            traceback.print_exc()
+                            return {"success": False, "message": f"Error during aggregation: {error_message}", "visualization": None}
+                            
+                    except Exception as agg_e: # Catch other non-ValueError exceptions during initial aggregation
+                        print(f"General error during aggregation: {str(agg_e)}")
+                        traceback.print_exc()
                         return {"success": False, "message": f"Error during aggregation: {str(agg_e)}", "visualization": None}
                 else:
                     print("Warning: Aggregation plan found but missing 'group_by' or 'agg_specs'. Skipping aggregation.")

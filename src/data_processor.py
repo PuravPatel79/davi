@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import os
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 
 class DataProcessor:
     def __init__(self):
@@ -124,33 +124,33 @@ class DataProcessor:
 
         return "\n".join(info)
 
-    def filter_data(self, filters: Dict[str, Dict[str, Any]]) -> pd.DataFrame:
-        """Filter dataframe based on conditions specified in a structured dictionary.
+    def filter_data(self, filters: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Filter dataframe based on conditions specified in a list of dictionaries.
 
         Args:
-            filters: A dictionary where keys are column names and values are dictionaries
-                     specifying the 'operator' and 'value'.
-                     Example: {
-                         'Age': {'operator': '>', 'value': 30},
-                         'City': {'operator': '==', 'value': 'New York'},
-                         'Status': {'operator': 'isin', 'value': ['Active', 'Pending']}
-                     }
+            filters: A list of dictionaries, each specifying a filter condition.
+                     Example: [
+                         {'column': 'Age', 'operator': '>', 'value': 30},
+                         {'column': 'City', 'operator': '==', 'value': 'New York'},
+                         {'column': 'Status', 'operator': 'isin', 'value': ['Active', 'Pending']}
+                     ]
                      Supported operators: '==', '!=', '>', '<', '>=', '<=', 'isin'
         """
         if self.dataframe is None:
             raise ValueError("No data loaded yet.")
 
         filtered_df = self.dataframe.copy()
-        for column, condition in filters.items():
-            if column not in filtered_df.columns:
-                print(f"Warning: Filter column '{column}' not found in dataframe. Skipping filter.")
-                continue
-
+        for condition in filters:
+            column = condition.get('column')
             operator = condition.get('operator')
             value = condition.get('value')
 
-            if operator is None or value is None:
-                print(f"Warning: Invalid filter condition for column '{column}'. Missing 'operator' or 'value'. Skipping filter.")
+            if not column or not operator or value is None:
+                print(f"Warning: Invalid filter condition: {condition}. Missing 'column', 'operator', or 'value'. Skipping filter.")
+                continue
+                
+            if column not in filtered_df.columns:
+                print(f"Warning: Filter column '{column}' not found in dataframe. Skipping filter.")
                 continue
 
             try:
@@ -192,14 +192,18 @@ class DataProcessor:
 
         return filtered_df
 
-    def aggregate_data(self, group_by_columns: List[str], agg_specs: Dict[str, str], df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    def aggregate_data(self, group_by_columns: List[str], agg_specs: Dict[str, Union[str, Dict[str, str]]], df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """Aggregate dataframe by grouping and applying aggregation functions.
 
         Args:
             group_by_columns: A list of column names to group by.
-            agg_specs: A dictionary where keys are the names for the aggregated columns
-                       and values are the aggregation functions to apply (e.g., 'sum', 'mean', 'count', 'size').
-                       Example: {'OrderQuantity': 'sum', 'OrderCount': 'size'}
+            agg_specs: A dictionary where keys are the output column names.
+                       Values are either the string 'size' or a dictionary like 
+                       {'source': 'SourceColumnName', 'func': 'sum|mean|count|...'}.
+                       Example: {
+                           'TotalQuantity': {'source': 'OrderQuantity', 'func': 'sum'},
+                           'OrderCount': 'size'
+                       }
             df: Optional dataframe to perform aggregation on. If None, uses self.dataframe.
 
         Returns:
@@ -220,50 +224,66 @@ class DataProcessor:
             
             # Prepare aggregation dictionary for pandas
             pandas_agg_dict = {}
-            for new_col_name, agg_func in agg_specs.items():
-                if agg_func.lower() != 'size':
-                    original_col = new_col_name # Default assumption
-                    # Check if original_col exists in the dataframe being aggregated
-                    if original_col not in dataframe_to_agg.columns:
-                         # Try to infer original column if new name follows pattern like 'SumQuantity_sum'
-                         if new_col_name.lower().endswith(agg_func.lower()):
-                             potential_col = new_col_name[:-len(agg_func)]
-                             if potential_col in dataframe_to_agg.columns:
-                                 original_col = potential_col
-                             else:
-                                 raise ValueError(f"Could not determine original column for aggregation '{agg_func}' on '{new_col_name}'. Column '{original_col}' not found in dataframe.")
-                         else:
-                             raise ValueError(f"Could not determine original column for aggregation '{agg_func}' on '{new_col_name}'. Column '{original_col}' not found in dataframe.")
+            size_specs = {} # Separate dict for size
+
+            for output_col, spec in agg_specs.items():
+                if isinstance(spec, str) and spec.lower() == 'size':
+                    # Handle size aggregation separately
+                    size_specs[output_col] = 'size'
+                elif isinstance(spec, dict):
+                    source_col = spec.get('source')
+                    agg_func = spec.get('func')
                     
-                    # Final check if the determined original column exists
-                    if original_col not in dataframe_to_agg.columns:
-                         raise ValueError(f"Column '{original_col}' specified for aggregation '{agg_func}' not found in dataframe.")
+                    if not source_col or not agg_func:
+                        print(f"Warning: Invalid aggregation spec for '{output_col}'. Missing 'source' or 'func'. Skipping.")
+                        continue
+                        
+                    agg_func_lower = agg_func.lower()
+                    if agg_func_lower == 'size': # Allow 'size' in dict format too
+                         size_specs[output_col] = 'size'
+                         continue
+
+                    # Validate source column exists
+                    if source_col not in dataframe_to_agg.columns:
+                        # This is where LLM self-correction or user clarification would be triggered in the agent
+                        raise ValueError(f"Source column '{source_col}' specified for aggregation '{agg_func_lower}' on output '{output_col}' not found in dataframe. Available columns: {list(dataframe_to_agg.columns)}")
                          
-                    pandas_agg_dict[new_col_name] = pd.NamedAgg(column=original_col, aggfunc=agg_func.lower())
+                    pandas_agg_dict[output_col] = pd.NamedAgg(column=source_col, aggfunc=agg_func_lower)
                 else:
-                    pass # Handle size later
+                    print(f"Warning: Invalid aggregation spec format for '{output_col}'. Skipping.")
             
+            # Perform non-size aggregations
             if pandas_agg_dict:
                 aggregated_df = grouped_data.agg(**pandas_agg_dict).reset_index()
             else:
                 # If only size was requested, or no other aggregations, get unique group keys
-                # Need to handle the case where grouped_data might be empty if dataframe_to_agg was empty
                 if not dataframe_to_agg.empty:
-                    aggregated_df = grouped_data.first().reset_index()[group_by_columns]
+                    # Use .first() to get group keys without needing an aggregation column
+                    # Need to handle potential empty groups if filtering resulted in empty groups
+                    try:
+                        aggregated_df = grouped_data.first().reset_index()[group_by_columns]
+                    except IndexError: # Happens if grouped_data is empty
+                        aggregated_df = pd.DataFrame(columns=group_by_columns)
                 else:
                     aggregated_df = pd.DataFrame(columns=group_by_columns) # Empty df with group columns
 
-            size_specs = {name: func for name, func in agg_specs.items() if func.lower() == 'size'} 
+            # Handle size aggregation
             if size_specs:
-                size_df = grouped_data.size().reset_index(name=list(size_specs.keys())[0])
+                # Use the name from the first size spec found
+                size_col_name = list(size_specs.keys())[0]
                 if len(size_specs) > 1:
-                    print("Warning: Multiple 'size' aggregations requested. Using name from first one.")
+                    print(f"Warning: Multiple 'size' aggregations requested. Using name '{size_col_name}' from the first one.")
+                
+                size_df = grouped_data.size().reset_index(name=size_col_name)
                 
                 # Merge size results with other aggregations if they exist
                 if set(aggregated_df.columns) == set(group_by_columns) and not pandas_agg_dict:
                      aggregated_df = size_df # Replace with size results if only size was requested
                 elif not aggregated_df.empty:
-                     aggregated_df = pd.merge(aggregated_df, size_df, on=group_by_columns, how='left')
+                     # Check if size_df is empty (can happen if dataframe_to_agg was empty)
+                     if not size_df.empty:
+                         aggregated_df = pd.merge(aggregated_df, size_df, on=group_by_columns, how='left')
+                     # else: aggregated_df already contains the group keys, just no size data
                 elif not size_df.empty: # Handle case where only size was requested and df wasn't empty
                      aggregated_df = size_df
                 # If both aggregated_df and size_df are empty, aggregated_df remains empty df with group columns
@@ -272,6 +292,9 @@ class DataProcessor:
 
         except Exception as e:
             print(f"Error during aggregation: {str(e)}")
+            # Add traceback for detailed debugging if needed
+            # import traceback
+            # traceback.print_exc()
             raise
 
     def preprocess_data(self, steps: List[Dict[str, str]]) -> None:
