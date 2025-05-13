@@ -40,7 +40,7 @@ def handle_informational_queries(agent):
         
         # Display result
         if result.get("success", False):
-            print("\nResult:")
+            print("\nAnalysis Result:")
             print(result["message"])
             # Check if a visualization was unexpectedly created (shouldn't happen now)
             if result.get("visualization") is not None:
