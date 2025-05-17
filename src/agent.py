@@ -106,8 +106,45 @@ USER QUERY:
 - Ensure all necessary components (preprocessing, aggregation, post_aggregation, visualization_params/analysis_params) are included as needed for the request.
 """
 
+    def _is_greeting_or_casual_message(self, query: str) -> bool:
+        """Detect if the query is a greeting or casual message not related to data analysis."""
+        # Convert to lowercase for case-insensitive matching
+        query_lower = query.lower().strip()
+        
+        # Common greeting patterns
+        greeting_patterns = [
+            r'^hi\b', r'^hello\b', r'^hey\b', r'^greetings\b', 
+            r'^good morning\b', r'^good afternoon\b', r'^good evening\b',
+            r'^how are you\b', r'^how\'s it going\b', r'^what\'s up\b',
+            r'^how was your day\b', r'^how is your day\b'
+        ]
+        
+        # Check if query matches any greeting pattern
+        for pattern in greeting_patterns:
+            if re.search(pattern, query_lower):
+                return True
+                
+        # Check for very short queries that are likely not data-related
+        if len(query_lower.split()) <= 3 and not any(data_term in query_lower for data_term in 
+                                                   ['data', 'profit', 'sales', 'total', 'customer', 'country', 'column']):
+            return True
+            
+        return False
+
     def process_query(self, query: str, mode: Literal["informational", "visualization"]) -> Dict[str, Any]:
         try:
+            # Check if the query is a greeting or casual message
+            if self._is_greeting_or_casual_message(query):
+                fun_responses = [
+                    "I'm all about the data life! Ask me something about your dataset and let's make those numbers talk!",
+                    "Hey there! While I'd love to chat about your day, I'm really excited to dive into your data questions!",
+                    "Numbers are my jam! Skip the small talk and hit me with your data questions - that's where the magic happens!",
+                    "Data detective at your service! Rather than discussing the weather, let's uncover some insights in your dataset!",
+                    "I'm like a data DJ - ready to spin some analytical insights! What data track would you like to play?"
+                ]
+                import random
+                return {"success": True, "message": random.choice(fun_responses), "visualization": None}
+            
             data_info = self.data_processor.get_column_info()
             mode_instructions = self.informational_instructions if mode == "informational" else self.visualization_instructions
             

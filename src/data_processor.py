@@ -162,11 +162,25 @@ class DataProcessor:
                         filtered_df = filtered_df[col_series.isin(value)]
                     else:
                         print(f"Warning: 'isin' operator requires a list value for column '{column}'. Skipping filter.")
+                # Add support for 'in' operator (same as 'isin')
+                elif operator == "in":
+                    if isinstance(value, list):
+                        filtered_df = filtered_df[col_series.isin(value)]
+                    else:
+                        print(f"Warning: 'in' operator requires a list value for column '{column}'. Skipping filter.")
+                # Add support for 'not in' operator
+                elif operator == "not in":
+                    if isinstance(value, list):
+                        filtered_df = filtered_df[~col_series.isin(value)]
+                    else:
+                        print(f"Warning: 'not in' operator requires a list value for column '{column}'. Skipping filter.")
                 else:
                     print(f"Warning: Unsupported operator '{operator}' for column '{column}'. Skipping filter.")
             except Exception as e:
                 print(f"Error applying filter on column '{column}' with operator '{operator}' and value '{value}': {str(e)}")
                 continue
+        
+        print(f"Shape after filtering: {filtered_df.shape}")
         return filtered_df
 
     def aggregate_data(self, group_by_columns: List[str], agg_specs: Dict[str, tuple], df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
