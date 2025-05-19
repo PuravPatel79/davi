@@ -31,7 +31,7 @@ A powerful, interactive data analysis tool that combines natural language proces
 1. Clone the repository:
    ```
    git clone <repository-url>
-   cd ai-data-analysis-agent
+   cd davi
    ```
 
 2. Install required dependencies:
