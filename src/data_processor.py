@@ -65,7 +65,7 @@ class DataProcessor:
                     if loaded:
                         print(f"Successfully loaded local CSV file: {file_path}")
                     else:
-                         raise ValueError(f"Failed to load CSV file: {file_path}")
+                        raise ValueError(f"Failed to load CSV file: {file_path}")
                 elif file_path.endswith((".xls", ".xlsx")):
                     self.dataframe = pd.read_excel(file_path)
                     print(f"Successfully loaded local Excel file: {file_path}")
@@ -201,7 +201,7 @@ class DataProcessor:
         if dataframe_to_agg is None:
             raise ValueError("No data loaded yet. Either load data first or provide a dataframe.")
         
-        # Handle empty group_by_columns (for total calculations)
+        # Handle empty group_by_columns
         if not group_by_columns:
             result_df = pd.DataFrame()
             for output_col, (source_col, agg_func) in agg_specs.items():
@@ -225,7 +225,7 @@ class DataProcessor:
                     raise ValueError(f"Unsupported aggregation function: {agg_func}")
             return result_df
         
-        # Process grouped aggregations (standard pandas groupby)
+        # Process grouped aggregations
         for col in group_by_columns:
             if col not in dataframe_to_agg.columns:
                 raise ValueError(f"Group by column '{col}' not found in the dataframe being aggregated.")
@@ -258,12 +258,12 @@ class DataProcessor:
                     print(f"Warning: Multiple 'size' aggregations requested. Using name '{size_col_name}' from the first one.")
                 size_df = grouped_data.size().reset_index(name=size_col_name)
                 if set(aggregated_df.columns) == set(group_by_columns) and not pandas_agg_dict:
-                     aggregated_df = size_df
+                    aggregated_df = size_df
                 elif not aggregated_df.empty:
-                     if not size_df.empty:
-                         aggregated_df = pd.merge(aggregated_df, size_df, on=group_by_columns, how='left')
+                    if not size_df.empty:
+                        aggregated_df = pd.merge(aggregated_df, size_df, on=group_by_columns, how='left')
                 elif not size_df.empty:
-                     aggregated_df = size_df
+                    aggregated_df = size_df
             return aggregated_df
         except Exception as e:
             print(f"Error during aggregation: {str(e)}")
@@ -271,8 +271,8 @@ class DataProcessor:
 
     def preprocess_data(self, steps: List[Dict[str, str]], df_input: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """Apply preprocessing steps to the dataframe. 
-           If df_input is provided, it operates on that and returns the modified df.
-           Otherwise, it modifies self.dataframe in place and returns it.
+            If df_input is provided, it operates on that and returns the modified df.
+            Otherwise, it modifies self.dataframe in place and returns it.
         """
         df_to_process = df_input.copy() if df_input is not None else self.dataframe
 

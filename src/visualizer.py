@@ -49,20 +49,17 @@ class Visualizer:
             elif viz_type == 'scatter':
                 fig = px.scatter(df, x=x, y=y, color=color, title=title, **kwargs)
             elif viz_type == 'histogram':
-                # Histogram typically only uses x
                 fig = px.histogram(df, x=x, color=color, title=title, **kwargs)
             elif viz_type == 'pie':
-                # Pie chart uses names (like x) and values (like y)
                 fig = px.pie(df, names=x, values=y, title=title, **kwargs)
             elif viz_type == 'box':
                 fig = px.box(df, x=x, y=y, color=color, title=title, **kwargs)
             elif viz_type == 'heatmap':
-                # For heatmap, we might need to pivot the passed df
                 if x and y and 'z' in kwargs:
                     z = kwargs.pop('z')
                     if z not in df.columns:
-                         print(f"Error: Z-axis column 	{z}	 not found for heatmap.")
-                         return None
+                        print(f"Error: Z-axis column 	{z}	 not found for heatmap.")
+                        return None
                     try:
                         pivot_df = df.pivot(index=y, columns=x, values=z)
                         fig = px.imshow(pivot_df, title=title, **kwargs)
@@ -70,7 +67,6 @@ class Visualizer:
                         print(f"Error pivoting data for heatmap: {pivot_e}")
                         return None
                 else:
-                    # Attempt correlation heatmap on numeric columns of the passed df
                     numeric_df = df.select_dtypes(include=['number'])
                     if not numeric_df.empty:
                         corr_df = numeric_df.corr()
@@ -87,7 +83,7 @@ class Visualizer:
                 print("Successfully created Plotly figure.")
                 return fig
             else:
-                # This case should ideally not be reached if px functions work
+                # This case should not be reached if px functions work
                 print(f"Error: Plotly Express function for '{viz_type}' did not return a valid Figure object.")
                 return None
                 
@@ -131,10 +127,8 @@ class Visualizer:
                 return {'type': 'box', 'x': col2, 'y': col1}
             elif not num_col1 and num_col2:
                 return {'type': 'box', 'x': col1, 'y': col2}
-            else: # Two categorical
-                 # Heatmap of counts might be better, but requires aggregation logic here
-                 # For simplicity, maybe suggest a grouped bar chart or just return error
-                 return {"error": "Direct visualization for two categorical columns is complex. Try summarizing first."} 
-                 # Or potentially: {'type': 'bar', 'x': col1, 'color': col2} # Grouped bar
+            else:
+                # For simplicity, let's output a grouped bar chart if there is aggregation error
+                return {'type': 'bar', 'x': col1, 'color': col2} # Grouped bar
         
         return {"error": "Could not determine appropriate visualization for the given columns."}

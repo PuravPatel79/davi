@@ -1,15 +1,14 @@
-# -*- coding: utf-8 -*-
 import os
 import sys
 import json
-import plotly.io as pio # Import plotly.io
+import plotly.io as pio
 from dotenv import load_dotenv
 import webbrowser
 from src.data_processor import DataProcessor
 from src.visualizer import Visualizer
 from src.agent import DataAnalysisAgent
 
-# Load environment variables from .env file if it exists
+# Load environment variables from .env file
 load_dotenv()
 
 DASHBOARD_HTML_FILE = "dashboard.html"
@@ -22,7 +21,8 @@ def display_menu():
     print("What would you like to do?")
     print("1. Ask informational questions about the data")
     print("2. Request data visualizations")
-    print("3. Exit")
+    print("3. Generate SQL from natural language")
+    print("4. Exit")
     print("-----------------------------------")
 
 def handle_informational_queries(agent):
@@ -42,9 +42,37 @@ def handle_informational_queries(agent):
         if result.get("success", False):
             print("\nAnalysis Result:")
             print(result["message"])
-            # Check if a visualization was unexpectedly created (shouldn't happen now)
+            # Check if a visualization was unexpectedly created
             if result.get("visualization") is not None:
                 print("\nWarning: A visualization was generated unexpectedly in informational mode.")
+        else:
+            print("\nError:")
+            print(result.get("message", "Unknown error occurred"))
+
+def handle_nlp_to_sql_queries(agent):
+    """Handles the sub-menu loop for NLP to SQL conversion queries."""
+    print("\n--- NLP to SQL Conversion Mode ---")
+    print("Type your natural language questions below to get SQL queries.")
+    print("Type exactly 'back' to return to the main menu.")
+    
+    while True:
+        query = input("\nEnter your natural language query (or 'back'): ")
+        if query.strip().lower() == 'back':
+            break  # Exit NLP to SQL sub-loop
+
+        print("\nGenerating SQL query...")
+        # Pass mode="sql"
+        result = agent.process_query(query, mode="sql")
+        
+        # Display result
+        if result.get("success", False):
+            print("\nGenerated SQL:")
+            print(result["message"])
+            
+            # If there's a detailed explanation available, show it
+            if result.get("explanation"):
+                print("\nExplanation:")
+                print(result["explanation"])
         else:
             print("\nError:")
             print(result.get("message", "Unknown error occurred"))
@@ -90,12 +118,12 @@ def generate_and_show_html_dashboard(visualizations):
                 
                 # Add title and a container for the figure's div
                 html_body_content += f'    <h2>Visualization {valid_viz_count + 1}</h2>\n'
-                # Wrap the plotly-generated div in our styled container
+                # Wrap the plotly-generated div in the styled container
                 html_body_content += f'    <div class="chart-container">{fig_div_html}</div>\n'
                 html_body_content += "    <hr>\n"
                 valid_viz_count += 1
             except Exception as html_err:
-                 print(f"Warning: Could not convert figure {i+1} to HTML div. Skipping. Error: {html_err}")
+                print(f"Warning: Could not convert figure {i+1} to HTML div. Skipping. Error: {html_err}")
         else:
             print(f"Warning: Item {i+1} is not a Plotly figure, skipping.")
 
@@ -143,7 +171,8 @@ def handle_visualization_requests(agent):
         
         if query_lower == 'show dashboard':
             generate_and_show_html_dashboard(stored_visualizations)
-            # Optionally clear the list after showing: stored_visualizations = []
+            # If you want to clear the dashboard after every 'show dashboard' command then you can uncomment line 172.
+            # stored_visualizations = []
             continue # Go back to asking for input
 
         print("\nProcessing your visualization request...")
@@ -158,13 +187,12 @@ def handle_visualization_requests(agent):
             # Store visualization if created
             visualization = result.get("visualization")
             if visualization is not None:
-                # Check if it's a Plotly figure (using Plotly's base class might be better if available)
+                # Check if it's a Plotly figure
                 if hasattr(visualization, "to_json") and hasattr(visualization, "layout"):
                     print("Visualization generated and stored for the dashboard.")
                     stored_visualizations.append(visualization)
                 else:
                     print("Note: The agent returned something for visualization, but it doesn't look like a Plotly figure. Not stored.")
-            # Removed the 'else' that printed 'No visualization generated' because the message already indicates success/failure
         else:
             print("\nError:")
             print(result.get("message", "Unknown error occurred"))
@@ -188,9 +216,8 @@ def main():
         print(f"An unexpected error occurred during agent initialization: {str(e)}")
         return
     
-    # Example usage
-    print("AI Data Analysis Agent")
-    print("=====================")
+    print("davi says Hello!")
+    print("================")
     
     # Load data
     data_path = input("Enter path to your data file (CSV or Excel) or URL: ")
@@ -209,17 +236,19 @@ def main():
     # Interactive menu loop
     while True:
         display_menu()
-        choice = input("Enter your choice (1, 2, or 3): ")
+        choice = input("Enter your choice (1, 2, 3, or 4): ")
 
         if choice == '1':
             handle_informational_queries(agent)
         elif choice == '2':
             handle_visualization_requests(agent)
         elif choice == '3':
-            print("Exiting. Davi says Goodbye!")
+            handle_nlp_to_sql_queries(agent)
+        elif choice == '4':
+            print("Exiting. davi says Goodbye!")
             break
         else:
-            print("Invalid choice. Please enter 1, 2, or 3.")
+            print("Invalid choice. Please enter 1, 2, 3, or 4.")
 
 if __name__ == "__main__":
     main()

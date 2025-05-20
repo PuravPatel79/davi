@@ -5,9 +5,8 @@ import traceback
 from typing import Dict, Any, List, Optional, Union, Literal
 import google.generativeai as genai
 from langchain_google_genai import ChatGoogleGenerativeAI
-import pandas as pd  # Make sure pandas is imported
+import pandas as pd
 
-# Assuming data_processor and visualizer are in the same directory or package
 from .data_processor import DataProcessor
 from .visualizer import Visualizer
 
@@ -37,25 +36,25 @@ INSTRUCTIONS:
 
 ```json
 {
-  "response_type": "analysis",
-  "summary_text": "",
-  "filters": [
-      {"column": "column_name", "operator": "operator_symbol", "value": "value_to_filter"}
+    "response_type": "analysis",
+    "summary_text": "",
+    "filters": [
+        {"column": "column_name", "operator": "operator_symbol", "value": "value_to_filter"}
       // Example: [{ "column": "Country", "operator": "==", "value": "India" }]
-  ],
-  "aggregation": {
+    ],
+    "aggregation": {
     "group_by": [],  // EMPTY LIST ([]) for overall totals, e.g., "total profit for India"
     "agg_specs": { "OutputColumnName": { "agg_func": "sum|mean|count|...", "source_column": "ExactColumnNameFromDataset" } }
     // Example for 'total profit for India': { "group_by": [], "agg_specs": { "TotalProfit": { "agg_func": "sum", "source_column": "Profit" } } }
-  },
-  "post_aggregation": {
+    },
+    "post_aggregation": {
     "calculations": [
-      { "name": "NewCalculatedColumnName", "formula": "Operand1Column / Operand2Column" } 
+        { "name": "NewCalculatedColumnName", "formula": "Operand1Column / Operand2Column" } 
       // Supported operations: /, *, +, -
       // Ensure Operand1Column and Operand2Column exist in the aggregated data.
     ]
-  },
-  "sort_by": { "column": "OutputColumnNameOrNewCalculatedColumnName", "ascending": false },
+    },
+    "sort_by": { "column": "OutputColumnNameOrNewCalculatedColumnName", "ascending": false },
   "limit": 1 // Only apply limit if explicitly asked for top N, otherwise omit or set to null for total/sum queries.
 }
 ```
@@ -69,24 +68,52 @@ INSTRUCTIONS:
 - Generate ONLY a JSON object describing the necessary data preprocessing (if any), aggregation (if any), and visualization parameters needed to create the requested visualization. Use this format:
 ```json
 {
-  "response_type": "visualization",
-  "preprocessing": [
+    "response_type": "visualization",
+    "preprocessing": [
     {"operation": "operation_name", "column": "source_column", "new_column": "new_column_name"}
-  ],
-  "aggregation": {
+    ],
+    "aggregation": {
     "group_by": ["group_column1", "group_column2"],
     "agg_specs": { "NewAggregatedColumnName": { "agg_func": "sum|mean|count|...", "source_column": "ExactColumnNameFromDataset" } }
-  },
-  "visualization_params": {
+    },
+    "visualization_params": {
     "viz_type": "chart_type",
     "title": "Chart Title",
     "x": "x_column",
     "y": "y_column",
     "color": "color_column"
-  }
+    }
 }
 ```
 - **IMPORTANT: Only output the JSON block, nothing else.**
+"""
+
+        self.sql_instructions = """
+INSTRUCTIONS:
+- You are an expert SQL query generator. Your task is to convert natural language questions into valid SQL queries.
+- Analyze the dataset information provided and generate a SQL query that answers the user's question.
+- CRITICAL: ONLY use column names that EXACTLY match those listed in the DATASET INFORMATION section. Do not invent, rename, or assume any columns.
+- The SQL query should be valid, efficient, and directly answer the user's question.
+- Use proper SQL syntax with appropriate SELECT, FROM, WHERE, GROUP BY, HAVING, ORDER BY, and LIMIT clauses as needed.
+- Assume the dataset is stored in a table called 'data'.
+- For aggregation functions, use standard SQL functions like SUM, AVG, COUNT, MIN, MAX.
+- For filtering, use appropriate WHERE conditions with proper operators (=, >, <, >=, <=, LIKE, IN, etc.).
+- For string comparisons, use single quotes (e.g., WHERE Country = 'USA').
+- For date operations, use appropriate date functions based on the database system.
+- Include comments to explain complex parts of the query.
+- Format the SQL query with proper indentation for readability.
+- Provide a brief explanation of what the query does and how it answers the user's question.
+
+Example response format:
+```sql
+-- Query to find total sales by country
+SELECT Country, SUM(Sales) as TotalSales
+FROM data
+GROUP BY Country
+ORDER BY TotalSales DESC;
+```
+
+This query calculates the total sales for each country by summing the Sales column, grouping the results by Country, and sorting them in descending order of total sales.
 """
 
         self.base_template = """
@@ -101,7 +128,7 @@ USER QUERY:
 {mode_instructions}
 
 --- GENERAL GUIDELINES ---
-- Only use columns that actually exist in the dataset information provided.
+- CRITICAL: ONLY use columns that EXACTLY match those listed in the DATASET INFORMATION section. Do not invent, rename, or assume any columns.
 - When generating JSON, ensure it is valid and strictly follows the specified format for the given mode.
 - Ensure all necessary components (preprocessing, aggregation, post_aggregation, visualization_params/analysis_params) are included as needed for the request.
 """
@@ -126,12 +153,12 @@ USER QUERY:
                 
         # Check for very short queries that are likely not data-related
         if len(query_lower.split()) <= 3 and not any(data_term in query_lower for data_term in 
-                                                   ['data', 'profit', 'sales', 'total', 'customer', 'country', 'column']):
+                                                    ['data', 'profit', 'sales', 'total', 'customer', 'country', 'column']):
             return True
             
         return False
 
-    def process_query(self, query: str, mode: Literal["informational", "visualization"]) -> Dict[str, Any]:
+    def process_query(self, query: str, mode: Literal["informational", "visualization", "sql"]) -> Dict[str, Any]:
         try:
             # Check if the query is a greeting or casual message
             if self._is_greeting_or_casual_message(query):
@@ -146,7 +173,16 @@ USER QUERY:
                 return {"success": True, "message": random.choice(fun_responses), "visualization": None}
             
             data_info = self.data_processor.get_column_info()
-            mode_instructions = self.informational_instructions if mode == "informational" else self.visualization_instructions
+            
+            # Selects the appropriate instructions based on the mode
+            if mode == "informational":
+                mode_instructions = self.informational_instructions
+            elif mode == "visualization":
+                mode_instructions = self.visualization_instructions
+            elif mode == "sql":
+                mode_instructions = self.sql_instructions
+            else:
+                return {"success": False, "message": f"Unsupported mode: {mode}", "visualization": None}
             
             final_prompt = self.base_template.format(
                 data_info=data_info,
@@ -156,6 +192,11 @@ USER QUERY:
             
             response = self.llm.invoke(final_prompt)
             response_text = self._extract_response_text(response)
+            
+            # Handle SQL mode differently since it doesn't use JSON
+            if mode == "sql":
+                return self._handle_sql_request(response_text)
+                
             parsed_plan = self._extract_json_plan(response_text)
 
             if parsed_plan:
@@ -177,6 +218,54 @@ USER QUERY:
             print(f"Error processing query: {str(e)}")
             traceback.print_exc()
             return {"success": False, "message": f"Error processing query: {str(e)}", "visualization": None}
+
+    def _handle_sql_request(self, response_text: str) -> Dict[str, Any]:
+        """Handle SQL query generation requests."""
+        try:
+            # Extract SQL query from response
+            sql_match = re.search(r"```sql\n(.*?)\n```", response_text, re.DOTALL)
+            
+            if sql_match:
+                sql_query = sql_match.group(1).strip()
+                
+                # Extract explanation (everything after the SQL code block)
+                explanation = re.sub(r".*?```sql.*?```", "", response_text, flags=re.DOTALL).strip()
+                
+                # Validate that SQL only uses columns from the dataset
+                if self.data_processor.dataframe is not None:
+                    actual_columns = set(self.data_processor.dataframe.columns)
+                    # Simple regex to extract column names from SQL (not perfect but catches most cases)
+                    potential_columns = re.findall(r'(?:SELECT|WHERE|GROUP BY|ORDER BY|HAVING)\s+([^,;()]+)', sql_query, re.IGNORECASE)
+                    for col_ref in potential_columns:
+                        # Clean up the column reference
+                        col_parts = col_ref.strip().split()
+                        for part in col_parts:
+                            # Skip SQL keywords, functions, and aliases
+                            if (part.upper() in ['AS', 'FROM', 'AND', 'OR', 'ON', 'BY', 'DESC', 'ASC'] or 
+                                part.upper().startswith(('SUM', 'AVG', 'COUNT', 'MIN', 'MAX')) or
+                                part == '*'):
+                                continue
+                            # Check if this might be a column name
+                            if part not in actual_columns and not part.isdigit():
+                                print(f"Warning: Potential invalid column '{part}' in SQL query")
+                
+                return {
+                    "success": True, 
+                    "message": sql_query,
+                    "explanation": explanation,
+                    "visualization": None
+                }
+            else:
+                # If no SQL code block found, return the whole response as the SQL query
+                return {
+                    "success": True, 
+                    "message": response_text.strip(),
+                    "visualization": None
+                }
+        except Exception as e:
+            print(f"Error handling SQL request: {str(e)}")
+            traceback.print_exc()
+            return {"success": False, "message": f"Error generating SQL query: {str(e)}", "visualization": None}
 
     def _extract_response_text(self, response: Any) -> str:
         if hasattr(response, 'content'): return response.content
@@ -347,50 +436,43 @@ USER QUERY:
                                             current_df[col_name] = op1 - op2
                                         else:
                                             print(f"Warning: Unsupported operator '{operator}' in formula '{formula}'. Skipping calculation.")
-                                        print(f"Calculated column '{col_name}'.")
-                                    except Exception as calc_e:
-                                        print(f"Error calculating column '{col_name}' with formula '{formula}': {str(calc_e)}. Skipping.")
+                                    except Exception as calc_error:
+                                        print(f"Error during calculation '{formula}': {str(calc_error)}")
                                 else:
-                                    print(f"Warning: Operand columns '{op1_col}' or '{op2_col}' not found for formula '{formula}'. Skipping calculation.")
+                                    print(f"Warning: One or both columns in formula '{formula}' not found in data. Skipping calculation.")
                             else:
-                                print(f"Warning: Invalid formula format '{formula}'. Skipping calculation.")
+                                print(f"Warning: Could not parse formula '{formula}'. Skipping calculation.")
                         else:
-                            print(f"Warning: Invalid calculation item format: {calc}. Skipping.")
-            
+                            print(f"Warning: Invalid calculation specification: {calc}. Skipping calculation.")
+
             # --- Apply Sorting --- 
-            sort_by_plan = analysis_plan.get("sort_by")
-            if sort_by_plan and isinstance(sort_by_plan, dict):
-                sort_column = sort_by_plan.get("column")
-                ascending = sort_by_plan.get("ascending", False)  # Default to descending for analysis results
-                if sort_column:
-                    if sort_column in current_df.columns:
-                        print(f"Sorting data by {sort_column}, ascending={ascending}")
+            sort_plan = analysis_plan.get("sort_by")
+            if sort_plan and isinstance(sort_plan, dict):
+                sort_col = sort_plan.get("column")
+                ascending = sort_plan.get("ascending", False)
+                if sort_col:
+                    if sort_col in current_df.columns:
+                        print(f"Sorting by {sort_col} (ascending={ascending})")
                         try:
-                            current_df = self.data_processor.sort_data(
-                                df=current_df, 
-                                by=sort_column, 
-                                ascending=ascending
-                            )
-                            print("Sorting successful.")
+                            current_df = current_df.sort_values(by=sort_col, ascending=ascending)
                         except Exception as sort_error:
-                            print(f"Warning: Error sorting by '{sort_column}': {str(sort_error)}. Skipping sorting.")
+                            print(f"Error during sorting: {str(sort_error)}")
                     else:
-                        print(f"Warning: Sort column '{sort_column}' not found in processed data. Skipping sorting.")
-                else:
-                    print("Warning: Sort plan missing 'column'. Skipping sorting.")
+                        print(f"Warning: Sort column '{sort_col}' not found in processed data. Skipping sorting.")
 
             # --- Apply Limit --- 
             limit_val = analysis_plan.get("limit")
             if limit_val is not None:
                 try:
-                    limit_num = int(limit_val)
-                    if limit_num > 0:
-                        print(f"Limiting results to {limit_num} rows.")
-                        current_df = self.data_processor.limit_data(df=current_df, n=limit_num)
-                        print("Limit applied.")
-                except ValueError:
+                    limit_val = int(limit_val)
+                    if limit_val > 0:
+                        print(f"Applying limit: {limit_val}")
+                        current_df = current_df.head(limit_val)
+                    else:
+                        print(f"Warning: Invalid limit value: {limit_val}. Must be positive. Skipping limit.")
+                except (ValueError, TypeError):
                     print(f"Warning: Invalid limit value '{limit_val}'. Must be an integer. Skipping limit.")
-
+            
             # --- Generate Summary Text --- 
             summary_prompt_template = """
 Based on the user's query: '{user_query}'
