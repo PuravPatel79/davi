@@ -171,7 +171,7 @@ def handle_visualization_requests(agent):
         
         if query_lower == 'show dashboard':
             generate_and_show_html_dashboard(stored_visualizations)
-            # If you want to clear the dashboard after every 'show dashboard' command then you can uncomment line 172.
+            # If you want to clear the dashboard after every 'show dashboard' command then you can uncomment the line below.
             # stored_visualizations = []
             continue # Go back to asking for input
 
