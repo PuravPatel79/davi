@@ -7,8 +7,8 @@ import google.generativeai as genai
 from langchain_google_genai import ChatGoogleGenerativeAI
 import pandas as pd
 
-from .data_processor import DataProcessor
-from .visualizer import Visualizer
+from data_processor import DataProcessor
+from visualizer import Visualizer
 
 class DataAnalysisAgent:
     def __init__(self, data_processor: DataProcessor, visualizer: Visualizer, gemini_api_key: Optional[str] = None):

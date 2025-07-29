@@ -1,5 +1,6 @@
 *.env
 *.vscode
 /davi_venv
+venv/
 src/__pycache__
 *.html
