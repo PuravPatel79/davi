@@ -1,16 +1,20 @@
 import React, { useState } from 'react';
+import PlotlyChart from './PlotlyChart'; // Import the new, robust component
 
-// Styles are embedded inside the component to make it self-contained.
+// Styles
 const styles = {
+  appWrapper: {
+    display: 'flex',
+    justifyContent: 'center',
+    padding: '40px 20px',
+    boxSizing: 'border-box',
+  },
   app: {
+    width: '100%',
     maxWidth: '800px',
-    margin: '0 auto',
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif",
-    backgroundColor: '#f4f7f6',
     color: '#333',
-    padding: '20px',
     textAlign: 'center',
-    minHeight: '100vh',
   },
   header: {
     marginBottom: '40px',
@@ -74,7 +78,14 @@ const styles = {
     backgroundColor: '#ecf0f1',
     borderRadius: '8px',
     marginBottom: '20px',
-    whiteSpace: 'pre-wrap', // To respect newlines in the data_info string
+    whiteSpace: 'pre-wrap',
+  },
+  modeSelector: {
+    display: 'flex',
+    justifyContent: 'center',
+    gap: '20px',
+    marginBottom: '15px',
+    textAlign: 'left',
   },
   table: {
     width: '100%',
@@ -95,20 +106,17 @@ const styles = {
 };
 
 function App() {
-  // State for the two-step process
   const [sessionId, setSessionId] = useState(null);
   const [dataInfo, setDataInfo] = useState(null);
   const [datasetUrl, setDatasetUrl] = useState('');
   
-  // State for the analysis step
   const [query, setQuery] = useState('');
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [mode, setMode] = useState('informational');
   
-  // General UI state
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // --- Handler for Step 1: Loading Data ---
   const handleLoadData = async (event) => {
     event.preventDefault();
     if (!datasetUrl) {
@@ -140,7 +148,6 @@ function App() {
     }
   };
 
-  // --- Handler for Step 2: Analyzing Data ---
   const handleAnalyze = async (event) => {
     event.preventDefault();
     if (!query) {
@@ -155,7 +162,7 @@ function App() {
       const res = await fetch('http://127.0.0.1:5000/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, query: query }),
+        body: JSON.stringify({ session_id: sessionId, query: query, mode: mode }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to analyze data.');
@@ -170,94 +177,121 @@ function App() {
   };
 
   return (
-    <div style={styles.app}>
-      <header style={styles.header}>
-        <h1 style={styles.h1}>davi - Data Analyst & Visualizer</h1>
-      </header>
+    <div style={styles.appWrapper}>
+      <div style={styles.app}>
+        <header style={styles.header}>
+          <h1 style={styles.h1}>davi - Data Analyst & Visualizer</h1>
+        </header>
 
-      <main>
-        {/* --- Data Loading Form (Always visible) --- */}
-        <form onSubmit={handleLoadData} style={styles.form}>
-          <div style={styles.inputGroup}>
-            <input
-              style={styles.input}
-              type="text"
-              value={datasetUrl}
-              onChange={(e) => setDatasetUrl(e.target.value)}
-              placeholder="Enter dataset URL (e.g., https://.../data.csv)"
-              disabled={isLoading}
-            />
-            <button 
-              style={isLoading && !sessionId ? {...styles.button, ...styles.buttonDisabled} : styles.button} 
-              type="submit" 
-              disabled={isLoading && !sessionId}
-            >
-              {isLoading && !dataInfo ? 'Loading...' : 'Load Data'}
-            </button>
-          </div>
-        </form>
-
-        {/* --- Analysis Form (Visible only after data is loaded) --- */}
-        {sessionId && dataInfo && (
-          <div className="analysis-section">
-            <div style={styles.dataInfo}>
-              <strong>Dataset Loaded Successfully!</strong>
-              <pre>{dataInfo}</pre>
+        <main>
+          <form onSubmit={handleLoadData} style={styles.form}>
+            <div style={styles.inputGroup}>
+              <input
+                style={styles.input}
+                type="text"
+                value={datasetUrl}
+                onChange={(e) => setDatasetUrl(e.target.value)}
+                placeholder="Enter dataset URL (e.g., https://.../data.csv)"
+                disabled={isLoading}
+              />
+              <button 
+                style={isLoading && !sessionId ? {...styles.button, ...styles.buttonDisabled} : styles.button} 
+                type="submit" 
+                disabled={isLoading && !dataInfo}
+              >
+                {isLoading && !dataInfo ? 'Loading...' : 'Load Data'}
+              </button>
             </div>
-            <form onSubmit={handleAnalyze} style={styles.form}>
-              <div style={styles.inputGroup}>
-                <input
-                  style={styles.input}
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Now ask a question about the data"
-                  disabled={isLoading}
-                />
-                <button 
-                  style={isLoading ? {...styles.button, ...styles.buttonDisabled} : styles.button} 
-                  type="submit" 
-                  disabled={isLoading}
-                >
-                  {isLoading ? 'Analyzing...' : 'Ask'}
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
+          </form>
 
-        {/* --- Results Display Area --- */}
-        <div style={styles.results}>
-          {error && <div style={styles.error}>Error: {error}</div>}
-          
-          {analysisResult && (
-            <div>
-              <h3 style={styles.h3}>Summary</h3>
-              <p>{analysisResult.message}</p>
+          {sessionId && dataInfo && (
+            <div className="analysis-section">
+              <div style={styles.dataInfo}>
+                <strong>Dataset Loaded Successfully!</strong>
+                <pre>{dataInfo}</pre>
+              </div>
               
-              {analysisResult.data && analysisResult.data.length > 0 && (
-                <>
-                  <h3 style={styles.h3}>Data</h3>
-                  <table style={styles.table}>
-                    <thead>
-                      <tr>
-                        {Object.keys(analysisResult.data[0]).map(key => <th style={styles.th} key={key}>{key}</th>)}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {analysisResult.data.map((row, index) => (
-                        <tr key={index}>
-                          {Object.values(row).map((val, i) => <td style={styles.td} key={i}>{String(val)}</td>)}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </>
-              )}
+              <div style={styles.modeSelector}>
+                <label>
+                  <input 
+                    type="radio" 
+                    value="informational" 
+                    checked={mode === 'informational'} 
+                    onChange={(e) => setMode(e.target.value)} 
+                  />
+                  Informational
+                </label>
+                <label>
+                  <input 
+                    type="radio" 
+                    value="visualization" 
+                    checked={mode === 'visualization'} 
+                    onChange={(e) => setMode(e.target.value)} 
+                  />
+                  Visualization
+                </label>
+              </div>
+
+              <form onSubmit={handleAnalyze} style={styles.form}>
+                <div style={styles.inputGroup}>
+                  <input
+                    style={styles.input}
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder={mode === 'visualization' ? 'e.g., Plot sales by country' : 'e.g., What are the total sales?'}
+                    disabled={isLoading}
+                  />
+                  <button 
+                    style={isLoading ? {...styles.button, ...styles.buttonDisabled} : styles.button} 
+                    type="submit" 
+                    disabled={isLoading}
+                  >
+                    {isLoading ? 'Analyzing...' : 'Ask'}
+                  </button>
+                </div>
+              </form>
             </div>
           )}
-        </div>
-      </main>
+
+          <div style={styles.results}>
+            {error && <div style={styles.error}>Error: {error}</div>}
+            
+            {analysisResult && (
+              analysisResult.visualization ? (
+                <PlotlyChart 
+                  chartJSON={analysisResult.visualization} 
+                />
+              ) : (
+                <div>
+                  <h3 style={styles.h3}>Summary</h3>
+                  <p>{analysisResult.message}</p>
+                  
+                  {analysisResult.data && analysisResult.data.length > 0 && (
+                    <>
+                      <h3 style={styles.h3}>Data</h3>
+                      <table style={styles.table}>
+                        <thead>
+                          <tr>
+                            {Object.keys(analysisResult.data[0]).map(key => <th style={styles.th} key={key}>{key}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {analysisResult.data.map((row, index) => (
+                            <tr key={index}>
+                              {Object.values(row).map((val, i) => <td style={styles.td} key={i}>{String(val)}</td>)}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </>
+                  )}
+                </div>
+              )
+            )}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

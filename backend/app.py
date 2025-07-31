@@ -1,13 +1,15 @@
 # backend/app.py
+import json
 import sys
 import os
 import uuid
 import redis
 import pandas as pd
-import pickle # Import the pickle library for serialization
+import pickle
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from flask_cors import CORS
+import plotly.utils # Import plotly utils for JSON encoding
 
 # --- More robust path handling ---
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -22,6 +24,15 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 app = Flask(__name__)
 CORS(app)
+
+# --- Custom JSON Encoder for Plotly Figures ---
+class PlotlyJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, go.Figure):
+            return obj.to_dict()
+        return json.JSONEncoder.default(self, obj)
+
+# app.json_encoder = PlotlyJSONEncoder # This is one way, but we'll do it manually for clarity
 
 # --- Connect to Redis ---
 try:
@@ -85,6 +96,7 @@ def analyze():
 
     user_query = data['query']
     session_id = data['session_id']
+    mode = data.get('mode', 'informational')
 
     serialized_df = redis_client.get(session_id)
     if serialized_df is None:
@@ -95,13 +107,18 @@ def analyze():
 
         data_processor = DataProcessor()
         data_processor.dataframe = dataframe
-        # --- FIX: Re-generate the metadata after loading from cache ---
         data_processor._extract_metadata() 
         
         visualizer = Visualizer(data_processor)
         agent = DataAnalysisAgent(data_processor, visualizer)
         
-        result = agent.process_query(user_query, mode=data.get('mode', 'informational'))
+        result = agent.process_query(user_query, mode=mode)
+
+        # --- FIX: Check for a visualization object and convert it to JSON ---
+        if result and result.get("visualization"):
+            fig = result["visualization"]
+            # Use plotly's built-in method to convert the figure to a JSON-serializable dictionary
+            result["visualization"] = fig.to_json()
 
         if result and result.get("success"):
             return jsonify(result)
