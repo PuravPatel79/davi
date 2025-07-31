@@ -22,7 +22,7 @@ function PlotlyChart({ chartJSON }) {
 
     // Plotly can take a moment to draw. We use a short timeout
     // to ensure we measure the height *after* it has finished rendering.
-    const timer = setTimeout(adjustContainerHeight, 100);
+    const timer = setTimeout(adjustContainerHeight, 150);
 
     // Cleanup function to prevent memory leaks
     return () => clearTimeout(timer);

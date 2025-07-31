@@ -114,6 +114,8 @@ function App() {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [mode, setMode] = useState('informational');
   
+  const [chartRevision, setChartRevision] = useState(0);
+  
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -168,6 +170,8 @@ function App() {
       if (!res.ok) throw new Error(data.error || 'Failed to analyze data.');
       
       setAnalysisResult(data);
+      // Increment the revision counter to force a re-mount of the chart component
+      setChartRevision(prevRevision => prevRevision + 1);
 
     } catch (err) {
       setError(err.message);
@@ -260,6 +264,8 @@ function App() {
             {analysisResult && (
               analysisResult.visualization ? (
                 <PlotlyChart 
+                  // --- FIX: Use the revision counter as a key to force a full remount ---
+                  key={chartRevision}
                   chartJSON={analysisResult.visualization} 
                 />
               ) : (
