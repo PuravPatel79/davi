@@ -1,5 +1,42 @@
 services:
+  # Backend Service (Flask API)
+  backend:
+    build: ./backend
+    container_name: davi-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env # Pass environment variables from .env file
+    # The backend service will be available internally on port 5000
+    # We don't need to expose it to the host machine directly
+    # because Nginx will proxy requests to it.
+    networks:
+      - davi-net
+    depends_on:
+      - redis
+
+  # Frontend Service (React App with Nginx)
+  frontend:
+    build: ./frontend
+    container_name: davi-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80" # Expose frontend on host port 3000
+    networks:
+      - davi-net
+    depends_on:
+      - backend
+
+  # Your existing Redis Service
   redis:
     image: "redis:alpine"
+    container_name: davi-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
+    networks:
+      - davi-net
+
+# Define the network that allows containers to communicate
+networks:
+  davi-net:
+    driver: bridge
