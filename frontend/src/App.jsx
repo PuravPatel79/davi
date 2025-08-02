@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import PlotlyChart from './PlotlyChart'; // Assuming PlotlyChart.jsx is in the same directory
+import PlotlyChart from './PlotlyChart';
 
 // --- Styles ---
-// We'll keep styles here for simplicity in this single-file component.
 const styles = {
   appWrapper: {
     display: 'flex',
@@ -112,7 +111,6 @@ const styles = {
     textAlign: 'left',
     borderBottom: '1px solid #ddd',
   },
-  // New style for the SQL code block
   sqlBox: {
     backgroundColor: '#2d2d2d',
     color: '#f8f8f2',
@@ -125,28 +123,17 @@ const styles = {
   },
 };
 
-
 function App() {
-  // State variables to manage the application's data and UI
   const [sessionId, setSessionId] = useState(null);
   const [dataInfo, setDataInfo] = useState(null);
   const [datasetUrl, setDatasetUrl] = useState('');
-  
   const [query, setQuery] = useState('');
   const [analysisResult, setAnalysisResult] = useState(null);
-  // Add 'sql' to the available modes
   const [mode, setMode] = useState('informational'); 
-  
-  // A key to force re-rendering of the Plotly chart
   const [chartRevision, setChartRevision] = useState(0);
-  
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  /**
-   * Handles loading data from a URL.
-   * It sends a POST request to the backend's /load endpoint.
-   */
   const handleLoadData = async (event) => {
     event.preventDefault();
     if (!datasetUrl) {
@@ -160,8 +147,8 @@ function App() {
     setAnalysisResult(null);
 
     try {
-      // The backend server is expected to be running on this address.
-      const res = await fetch('http://127.0.0.1:5000/load', {
+      // Relative path for the API call to work with the Nginx proxy
+      const res = await fetch('/api/load', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dataset_url: datasetUrl }),
@@ -179,10 +166,6 @@ function App() {
     }
   };
 
-  /**
-   * Handles the analysis request.
-   * It sends the user's query and the current mode to the backend's /analyze endpoint.
-   */
   const handleAnalyze = async (event) => {
     event.preventDefault();
     if (!query) {
@@ -194,17 +177,16 @@ function App() {
     setAnalysisResult(null);
 
     try {
-      const res = await fetch('http://127.0.0.1:5000/analyze', {
+      // Relative path for the API call to work with the Nginx proxy
+      const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // Send the session_id, query, and selected mode to the backend.
         body: JSON.stringify({ session_id: sessionId, query: query, mode: mode }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to analyze data.');
       
       setAnalysisResult(data);
-      // Increment the revision counter to force a re-mount of the chart component if needed.
       setChartRevision(prevRevision => prevRevision + 1);
 
     } catch (err) {
@@ -214,10 +196,6 @@ function App() {
     }
   };
 
-  /**
-   * Renders the results based on the response from the backend.
-   * It can display a Plotly chart, an SQL query, or an informational summary with data.
-   */
   const renderResults = () => {
     if (isLoading && !analysisResult) {
       return <div>Analyzing...</div>;
@@ -229,17 +207,15 @@ function App() {
       return <div>Your results will appear here.</div>;
     }
 
-    // Case 1: The result is a visualization.
     if (analysisResult.visualization) {
       return (
         <PlotlyChart 
-          key={chartRevision} // Use key to force remount on new data
+          key={chartRevision}
           chartJSON={analysisResult.visualization} 
         />
       );
     }
     
-    // Case 2: The result is an SQL query (identified by the 'explanation' key).
     if (analysisResult.explanation) {
         return (
             <div>
@@ -251,7 +227,6 @@ function App() {
         )
     }
 
-    // Case 3: The result is informational text and/or tabular data.
     return (
       <div>
         <h3 style={styles.h3}>Summary</h3>
@@ -281,10 +256,7 @@ function App() {
       </div>
     );
   };
-  
-  /**
-   * Gets the placeholder text for the query input based on the current mode.
-   */
+
   const getPlaceholderText = () => {
       switch(mode) {
           case 'informational':
@@ -306,7 +278,6 @@ function App() {
         </header>
 
         <main>
-          {/* Section for loading the dataset */}
           <form onSubmit={handleLoadData} style={styles.form}>
             <div style={styles.inputGroup}>
               <input
@@ -327,7 +298,6 @@ function App() {
             </div>
           </form>
 
-          {/* This section appears after data is successfully loaded */}
           {sessionId && dataInfo && (
             <div className="analysis-section">
               <div style={styles.dataInfo}>
@@ -335,7 +305,6 @@ function App() {
                 <pre>{dataInfo}</pre>
               </div>
               
-              {/* Mode selector with the new SQL option */}
               <div style={styles.modeSelector}>
                 <label>
                   <input 
@@ -366,7 +335,6 @@ function App() {
                 </label>
               </div>
 
-              {/* Form for submitting the analysis query */}
               <form onSubmit={handleAnalyze} style={styles.form}>
                 <div style={styles.inputGroup}>
                   <input
@@ -389,7 +357,6 @@ function App() {
             </div>
           )}
 
-          {/* The results container */}
           <div style={styles.results}>
             {renderResults()}
           </div>
