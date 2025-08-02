@@ -36,7 +36,7 @@ class PlotlyJSONEncoder(json.JSONEncoder):
 
 # --- Connect to Redis ---
 try:
-    redis_client = redis.Redis(host='localhost', port=6379, decode_responses=False)
+    redis_client = redis.Redis(host='redis', port=6379, decode_responses=False)
     redis_client.ping()
     print("Successfully connected to Redis.")
 except redis.exceptions.ConnectionError as e:
