@@ -62,6 +62,7 @@ INSTRUCTIONS:
 - **IMPORTANT: Do NOT generate a plan for data visualization in this mode.**
 """
 
+        # --- UPDATED VISUALIZATION INSTRUCTIONS ---
         self.visualization_instructions = """
 INSTRUCTIONS:
 - Analyze the user query based on the dataset information.
@@ -70,21 +71,24 @@ INSTRUCTIONS:
 {
     "response_type": "visualization",
     "preprocessing": [
-    {"operation": "operation_name", "column": "source_column", "new_column": "new_column_name"}
+        {"operation": "operation_name", "column": "source_column", "new_column": "new_column_name"}
     ],
     "aggregation": {
-    "group_by": ["group_column1", "group_column2"],
-    "agg_specs": { "NewAggregatedColumnName": { "agg_func": "sum|mean|count|...", "source_column": "ExactColumnNameFromDataset" } }
+        "group_by": ["group_column1", "group_column2"],
+        "agg_specs": { "NewAggregatedColumnName": { "agg_func": "sum|mean|count|...", "source_column": "ExactColumnNameFromDataset" } }
     },
     "visualization_params": {
-    "viz_type": "chart_type",
-    "title": "Chart Title",
-    "x": "x_column",
-    "y": "y_column",
-    "color": "color_column"
+        "viz_type": "chart_type",
+        "title": "Chart Title",
+        "x": "x_column",
+        "y": "y_column",
+        "color": "color_column",
+        "z": "z_column_for_heatmap"
     }
 }
 ```
+- **CRITICAL RULE 1:** For stacked bar charts, you MUST use `viz_type: "bar"` and specify the stacking category in the `color` parameter.
+- **CRITICAL RULE 2:** For heatmaps, you MUST use `viz_type: "heatmap"` and provide `x`, `y`, and `z` parameters. The `z` parameter is the numeric value for the color intensity.
 - **IMPORTANT: Only output the JSON block, nothing else.**
 """
 
@@ -334,7 +338,7 @@ USER QUERY:
 
             # Verify that columns specified in visualization parameters exist
             available_cols = list(df_to_visualize.columns)
-            for col_key in ["x", "y", "color"]:
+            for col_key in ["x", "y", "color", "z"]:
                 col_val = viz_params_plan.get(col_key)
                 if col_val and col_val not in available_cols:
                     if col_key == "color": 
@@ -350,7 +354,8 @@ USER QUERY:
                 "x": viz_params_plan.get("x"),
                 "y": viz_params_plan.get("y"),
                 "color": viz_params_plan.get("color"),
-                "title": viz_params_plan.get("title", "Visualization")
+                "title": viz_params_plan.get("title", "Visualization"),
+                "z": viz_params_plan.get("z") # Pass z param for heatmap
             }
             visualization = self.visualizer.create_visualization(**viz_params)
             explanation = f"Created {viz_params['viz_type']} chart: {viz_params['title']}."
