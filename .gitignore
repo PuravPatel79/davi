@@ -16,6 +16,7 @@ terraform.tfstate
 terraform.tfstate.backup
 *.tfvars
 *.hcl
+.terraform.tfstate.lock.info
 
 # IDE / OS
 .vscode/
