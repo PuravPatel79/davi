@@ -1,7 +1,26 @@
-*.env
-*.vscode
-/davi_venv
-venv/
+# Python
 __pycache__/
 *.pyc
+davi_venv/
+*.env
+venv/
+
+# Node
+node_modules/
+dist/
+build/
+
+# Terraform
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+*.tfvars
+*.hcl
+
+# IDE / OS
+.vscode/
+.DS_Store
+
+# Output files
 *.html
+*.csv
