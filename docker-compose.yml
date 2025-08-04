@@ -5,10 +5,11 @@ services:
     container_name: davi-backend
     restart: unless-stopped
     env_file:
-      - ./backend/.env # Pass environment variables from .env file
-    # The backend service will be available internally on port 5000
-    # We don't need to expose it to the host machine directly
-    # because Nginx will proxy requests to it.
+      - ./backend/.env
+    # With this we can run the application with Docker on localhost and AWS without changing the ports manually
+    # Set the REDIS_HOST environment variable for the local environment
+    environment:
+      - REDIS_HOST=redis
     networks:
       - davi-net
     depends_on:
@@ -23,10 +24,14 @@ services:
       - "3000:80" # Expose frontend on host port 3000
     networks:
       - davi-net
+    # Set the environment variable for the backend host for local development
+    environment:
+      - backend_host_api=backend
     depends_on:
-      - backend
+      backend:
+        condition: service_started
 
-  # Your existing Redis Service
+  # Redis Service
   redis:
     image: "redis:alpine"
     container_name: davi-redis
