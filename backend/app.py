@@ -9,7 +9,7 @@ import pickle
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from flask_cors import CORS
-import plotly.utils # Import plotly utils for JSON encoding
+import plotly.graph_objects as go
 
 # --- More robust path handling ---
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -25,23 +25,17 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 app = Flask(__name__)
 CORS(app)
 
-# --- Custom JSON Encoder for Plotly Figures ---
-class PlotlyJSONEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, go.Figure):
-            return obj.to_dict()
-        return json.JSONEncoder.default(self, obj)
-
-# app.json_encoder = PlotlyJSONEncoder # This is one way, but we'll do it manually for clarity
-
 # --- Connect to Redis ---
 try:
-    redis_client = redis.Redis(host='redis', port=6379, decode_responses=False)
+    # Read the Redis host from an environment variable. Enables us to launch the app in multiple ways.
+    # Default to 'localhost' if the variable is not set (for AWS ECS).
+    redis_host = os.getenv('REDIS_HOST', 'localhost')
+    
+    redis_client = redis.Redis(host=redis_host, port=6379, decode_responses=False)
     redis_client.ping()
-    print("Successfully connected to Redis.")
+    print(f"Successfully connected to Redis at {redis_host}.")
 except redis.exceptions.ConnectionError as e:
     print(f"Could not connect to Redis: {e}")
-    print("Please ensure Redis is running, for example, via Docker.")
     redis_client = None
 
 
@@ -114,10 +108,8 @@ def analyze():
         
         result = agent.process_query(user_query, mode=mode)
 
-        # --- FIX: Check for a visualization object and convert it to JSON ---
         if result and result.get("visualization"):
             fig = result["visualization"]
-            # Use plotly's built-in method to convert the figure to a JSON-serializable dictionary
             result["visualization"] = fig.to_json()
 
         if result and result.get("success"):

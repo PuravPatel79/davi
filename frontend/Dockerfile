@@ -20,15 +20,11 @@ RUN npm run build
 # STAGE 2: Serve the built application with Nginx
 FROM nginx:stable-alpine
 
-# --- FIX HERE ---
 # Copy the built files from the correct folder (/app/dist)
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Copy the custom Nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# The .template suffix tells the Nginx entrypoint script to process it and substitute any environment variables it finds
+COPY nginx.conf /etc/nginx/templates/default.conf.template
 
 # Expose port 80
 EXPOSE 80
-
-# Start Nginx
-CMD ["nginx", "-g", "daemon off;"]
