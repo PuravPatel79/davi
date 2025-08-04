@@ -4,9 +4,12 @@ import json
 import plotly.io as pio
 from dotenv import load_dotenv
 import webbrowser
-from src.data_processor import DataProcessor
-from src.visualizer import Visualizer
-from src.agent import DataAnalysisAgent
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'backend/src')))
+
+from data_processor import DataProcessor
+from visualizer import Visualizer
+from agent import DataAnalysisAgent
 
 # Load environment variables from .env file
 load_dotenv()
