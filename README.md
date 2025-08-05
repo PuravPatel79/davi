@@ -1,19 +1,25 @@
 # davi - Data Analyst and Visualizer
 
-`davi` is a powerful, full-stack data analysis application that allows users to upload datasets and interact with them using natural language. It can generate insights, create interactive visualizations, and translate plain English into SQL queries through an intuitive web interface. The application is designed with a modern, scalable architecture, ready for local development via Docker or full cloud deployment on AWS.
+`davi` is a powerful, full-stack data analysis application that allows users to upload datasets and interact with them using natural language. It can generate insights, create interactive visualizations, and translate plain English into SQL queries through an intuitive web interface. 
+
+This project has successfully completed its initial development and cloud deployment phases. It is now a fully functional web application hosted on AWS, ready for the next stages of development focusing on automation and advanced features.
 
 ## Table of Contents
 
 - [Features](#features)
 - [Live Demo](#live-demo)
 - [Project Architecture](#project-architecture)
-- [File Structure](#file-structure)
+- [Project Status & Roadmap](#project-status--roadmap)
+- [Prerequisites & Dependencies](#prerequisites--dependencies)
+- [Environment Variables](#environment-variables)
 - [Getting Started: Running 'davi'](#getting-started-running-davi)
   - [Method 1: Command-Line Tool (Backend Only)](#method-1-command-line-tool-backend-only)
   - [Method 2: Local Web Application (via Docker Compose)](#method-2-local-web-application-via-docker-compose)
   - [Method 3: Cloud Deployment (via Terraform & AWS)](#method-3-cloud-deployment-via-terraform--aws)
-- [Prerequisites & Dependencies](#prerequisites--dependencies)
-- [Environment Variables](#environment-variables)
+- [Usage](#usage)
+  - [Command-Line Interface](#command-line-interface)
+  - [Web Application (Docker & AWS)](#web-application-docker--aws)
+- [File Structure](#file-structure)
 - [Backend Capabilities](#backend-capabilities)
 
 ## Features
@@ -53,36 +59,34 @@ Once deployed on AWS, the application is accessible via the Application Load Bal
   - **Networking**: A custom VPC with public subnets, an Internet Gateway, and an Application Load Balancer (ALB).
   - **Container Registry**: Amazon ECR to store the frontend and backend Docker images.
 
-## File Structure
+## Project Status & Roadmap
 
-```
-davi/
-├── .github/              # CI/CD workflows (e.g., Jenkins, GitHub Actions)
-├── backend/              # Flask backend application
-│   ├── src/
-│   │   ├── agent.py
-│   │   ├── data_processor.py
-│   │   └── visualizer.py
-│   ├── .env              # Local environment variables (e.g., GOOGLE_API_KEY)
-│   ├── app.py            # Main Flask application file
-│   ├── Dockerfile
-│   └── requirements.txt
-├── frontend/             # React frontend application
-│   ├── src/
-│   │   └── App.jsx       # Main React component
-│   ├── Dockerfile
-│   ├── nginx.conf        # Nginx configuration for serving and proxying
-│   └── package.json
-├── terraform/            # All Terraform IaC files
-│   ├── main.tf           # VPC, Subnets, IGW
-│   ├── alb.tf            # Application Load Balancer
-│   ├── ecs.tf            # ECS Cluster, Task Definition, Service
-│   ├── ecr.tf            # ECR Repositories
-│   ├── security_groups.tf
-│   └── variables.tf
-├── .gitignore
-└── docker-compose.yml    # Docker Compose file for local full-stack deployment
-```
+The project is currently at the end of Phase 4.
+
+- **Phase 1: Backend API** - ✅ **Complete**
+- **Phase 2: Frontend UI** - ✅ **Complete**
+- **Phase 3: Containerization** - ✅ **Complete**
+- **Phase 4: Cloud Deployment** - ✅ **Complete**
+- **Phase 5: Automation & CI/CD** - 🚧 **Next Up:** Implement a CI/CD pipeline with Jenkins or GitHub Actions to automate testing and deployment.
+- **Phase 6: Scaling & Advanced Features** - Future work includes migrating to Kubernetes for advanced scaling and adding features like user accounts and query history with a persistent database (PostgreSQL/MongoDB).
+
+## Prerequisites & Dependencies
+
+- **System-Level:**
+  - Python 3.8+
+  - Node.js (for frontend development)
+  - Docker & Docker Compose
+  - Terraform
+  - AWS CLI
+- **Backend (Python):** See `backend/requirements.txt`. Key libraries include `Flask`, `pandas`, `google-generativeai`, and `redis`.
+- **Frontend (JavaScript):** See `frontend/package.json`. Key libraries include `react` and `plotly.js`.
+
+## Environment Variables
+
+- **Required.** Your API key for the Google Gemini service. 
+  Both are meant to be the same key even though they are saved with different variable names and different directories.
+  - For Docker/local development, create a `.env` file in the `/backend` directory and add the variable: `GOOGLE_API_KEY = "your_api_key_here"`. (This file is gitignored for security)
+  - For AWS deployment, create a `terraform.tfvars` file in the `/terraform` directory and add the variable: `gemini_api_key = "your_api_key_here"`. (This file is gitignored for security)
 
 ## Getting Started: Running 'davi'
 
@@ -125,27 +129,72 @@ This method builds the entire cloud infrastructure from scratch and deploys the 
   2. **Deploy the Infrastructure:**
      - Navigate to the `/terraform` directory.
      - Run `terraform init`.
-     - Run `terraform apply`. You will be prompted to enter your `gemini_api_key`.
+     - Run `terraform apply`.
   3. **Access the Live Application:**
      - Once `terraform apply` is complete, it will display the `alb_dns_name` in the outputs.
      - Paste this DNS name into your web browser to access your application.
 
-## Prerequisites & Dependencies
+## Usage
 
-- **System-Level:**
-  - Python 3.8+
-  - Node.js (for frontend development)
-  - Docker & Docker Compose
-  - Terraform
-  - AWS CLI
-- **Backend (Python):** See `backend/requirements.txt`. Key libraries include `Flask`, `pandas`, `google-generativeai`, and `redis`.
-- **Frontend (JavaScript):** See `frontend/package.json`. Key libraries include `react` and `plotly.js`.
+### Command-Line Interface
 
-## Environment Variables
+When you run the application via `python main.py`, you will interact with it directly in your terminal.
 
-- `GOOGLE_API_KEY`: **Required.** Your API key for the Google Gemini service.
-  - For Docker/local development, place it in `backend/.env`.
-  - For AWS deployment, Terraform will prompt you for it securely.
+1.  **Load Data**: The application will first prompt you to enter the path to your data file (CSV or Excel) or a URL, this interface also works with valid local file paths. For example, you can use this sample dataset:
+    ```
+    [https://raw.githubusercontent.com/yannie28/Global-Superstore/master/Global_Superstore(CSV).csv](https://raw.githubusercontent.com/yannie28/Global-Superstore/master/Global_Superstore(CSV).csv)
+    ```
+2.  **Select a Mode**: After the data is loaded, you will see a menu with the following options:
+    ```
+    1. Ask informational questions about the data
+    2. Request data visualizations
+    3. Generate SQL from natural language
+    4. Exit
+    ```
+3.  **Interact**: Choose an option and type your question in plain English. The results will be printed to the console.
+
+### Web Application (Docker & AWS)
+
+The interface for the local Docker deployment and the live AWS deployment is identical.
+
+1.  **Load Data**: Paste the URL to your dataset (e.g., the sample CSV link above) into the input box at the top of the page and click **Load Data**.
+2.  **Select a Mode**: Once the data is successfully loaded, a new section will appear. Choose your analysis mode by clicking one of the three radio buttons:
+    * **Informational**: For direct questions that result in text or a data table.
+    * **Visualization**: For requests that should generate a chart.
+    * **Natural Language to SQL**: To convert your question into a SQL query.
+3.  **Ask a Question**: Type your question into the text box and click **Ask**.
+4.  **View Results**: The result of your query will instantly appear in the results area below. If you requested a visualization, the chart will be rendered directly on the page. You can ask subsequent questions to update the results area with new information/charts/queries.
+
+## File Structure
+
+```
+davi/
+├── .github/              # (For future CI/CD implementation)
+├── backend/              # Flask backend application
+│   ├── src/
+│   │   ├── agent.py
+│   │   ├── data_processor.py
+│   │   └── visualizer.py
+│   ├── .env              # Local environment variables (e.g., GOOGLE_API_KEY)
+│   ├── app.py            # Main Flask application file
+│   ├── Dockerfile
+│   └── requirements.txt
+├── frontend/             # React frontend application
+│   ├── src/
+│   │   └── App.jsx       # Main React component
+│   ├── Dockerfile
+│   ├── nginx.conf        # Nginx configuration for serving and proxying
+│   └── package.json
+├── terraform/            # All Terraform IaC files
+│   ├── main.tf           # VPC, Subnets, IGW
+│   ├── alb.tf            # Application Load Balancer
+│   ├── ecs.tf            # ECS Cluster, Task Definition, Service
+│   ├── ecr.tf            # ECR Repositories
+│   ├── security_groups.tf
+│   └── variables.tf
+├── .gitignore
+└── docker-compose.yml    # Docker Compose file for local full-stack deployment
+```
 
 ## Backend Capabilities
 
