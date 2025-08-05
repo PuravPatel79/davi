@@ -1,183 +1,156 @@
 # davi - Data Analyst and Visualizer
 
-A powerful, interactive data analysis tool that combines natural language processing with advanced data analysis and visualization capabilities. Davi (Data Analyst and Visualizer) allows users to analyze data, generate visualizations, and convert natural language to SQL queries through a simple, menu-driven interface.
+`davi` is a powerful, full-stack data analysis application that allows users to upload datasets and interact with them using natural language. It can generate insights, create interactive visualizations, and translate plain English into SQL queries through an intuitive web interface. The application is designed with a modern, scalable architecture, ready for local development via Docker or full cloud deployment on AWS.
 
 ## Table of Contents
 
 - [Features](#features)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Informational Queries](#informational-queries)
-  - [Visualization Requests](#visualization-requests)
-  - [NLP to SQL Conversion](#nlp-to-sql-conversion)
-- [Architecture](#architecture)
+- [Live Demo](#live-demo)
+- [Project Architecture](#project-architecture)
 - [File Structure](#file-structure)
-- [Dependencies](#dependencies)
+- [Getting Started: Running 'davi'](#getting-started-running-davi)
+  - [Method 1: Command-Line Tool (Backend Only)](#method-1-command-line-tool-backend-only)
+  - [Method 2: Local Web Application (via Docker Compose)](#method-2-local-web-application-via-docker-compose)
+  - [Method 3: Cloud Deployment (via Terraform & AWS)](#method-3-cloud-deployment-via-terraform--aws)
+- [Prerequisites & Dependencies](#prerequisites--dependencies)
 - [Environment Variables](#environment-variables)
+- [Backend Capabilities](#backend-capabilities)
 
 ## Features
 
-- **Natural Language Data Analysis**: Ask questions about your data in plain English
-- **Interactive Visualizations**: Generate and view data visualizations based on natural language requests
-- **Dashboard Generation**: Collect multiple visualizations in a single dashboard view
-- **NLP to SQL Conversion**: Convert natural language questions into valid SQL queries
-- **Flexible Data Loading**: Support for CSV, Excel files, and URLs
-- **Robust Data Processing**: Filtering, aggregation, and preprocessing capabilities
-- **Schema-Aware Operations**: All operations respect and validate against your data schema
-- **User-Friendly Interface**: Menu-driven console interface for easy interaction
+- **Full-Stack Web Interface**: An intuitive and responsive frontend built with React for seamless user interaction.
+- **Natural Language Data Analysis**: Ask questions about your data in plain English ("What were the total sales?").
+- **Interactive Visualizations**: Generate Plotly charts from natural language requests ("Plot sales by country").
+- **NLP to SQL Conversion**: Translate complex questions into production-ready SQL queries.
+- **Multiple Deployment Options**: Run as a simple CLI tool, a full-stack local instance with Docker, or a scalable cloud service on AWS.
+- **Containerized Architecture**: Uses Docker and Docker Compose for consistent, isolated local development.
+- **Infrastructure as Code (IaC)**: The entire cloud infrastructure is defined and managed using Terraform for repeatable, automated deployments.
+- **Scalable Cloud Architecture**: Deployed on AWS ECS Fargate with an Application Load Balancer for high availability and scalability.
 
-## Installation
+## Live Demo
 
-1. Clone the repository:
-   ```
-   git clone <repository-url>
-   cd davi
-   ```
+Once deployed on AWS, the application is accessible via the Application Load Balancer's public DNS.
 
-2. Install required dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
+- **URL**: The `alb_dns_name` output from your Terraform deployment.
+- **Functionality**:
+  1. Load a dataset using a public URL (e.g., a raw CSV file from GitHub).
+  2. Select a mode: "Informational", "Visualization", or "Natural Language to SQL".
+  3. Type your query and receive the results directly in the browser.
 
-3. Set up your Google API key for Gemini:
-   - Create a `.env` file in the project root directory
-   - Add your Google API key: `GOOGLE_API_KEY=your_api_key_here`
-   - Or set it as an environment variable: `export GOOGLE_API_KEY=your_api_key_here`
+## Project Architecture
 
-## Usage
+`davi` uses a modern, decoupled, multi-container architecture.
 
-Run the main script to start the application:
-```
-python main.py
-```
-
-You'll be prompted to enter the path to your data file (CSV or Excel) or a URL. For example, you can use this sample dataset:
-```
-https://raw.githubusercontent.com/yannie28/Global-Superstore/master/Global_Superstore(CSV).csv
-```
-
-You'll be prompted to enter the path to your data file (CSV or Excel) or a URL. After loading the data, you'll see a menu with the following options:
-
-1. Ask informational questions about the data
-2. Request data visualizations
-3. Generate SQL from natural language
-4. Exit
-
-### Informational Queries
-
-Select option 1 to ask questions about your data. Examples:
-
-- "Calculate the total profit generated from operations in Canada."
-- "Identify the customer with the highest order volume across all product categories."
-- "Analyze the average transaction value segmented by geographic region."
-- "Present a breakdown of the top 5 performing products by revenue contribution."
-- "Summarize the dataset for me."
-
-The agent will analyze your query, process the data accordingly, and provide a concise answer based on the actual results.
-
-### Visualization Requests
-
-Select option 2 to request data visualizations. Examples:
-
-- "Generate a comparative bar chart illustrating revenue distribution across regional markets."
-- "Produce a scatter plot analyzing the correlation between profit margin and order quantity."
-- "Create a pie chart representation of market share distribution by product category."
-
-After generating visualizations, you can type `show dashboard` to view all created visualizations in a single HTML dashboard that opens in your browser.
-
-### NLP to SQL Conversion
-
-Select option 3 to convert natural language questions into SQL queries. Examples:
-
-- "Generate a report of cumulative profit metrics aggregated by geographical region."
-- "Identify all high-value customers whose total expenditure exceeds $1000 within the current fiscal period."
-- "Extract a chronological listing of all transactions originating from the Canadian market segment."
-- "Perform a quantitative analysis of order frequency distributed across product categories."
-
-The agent will generate a valid SQL query based on your question, along with an explanation of what the query does.
-
-## Architecture 
-
-Davi follows a modular architecture with the following components:
-
-1. **DataAnalysisAgent**: Core component that processes user queries using LLM (Gemini)
-2. **DataProcessor**: Handles data loading, filtering, aggregation, and preprocessing
-3. **Visualizer**: Creates and manages data visualizations using Plotly
-4. **Main Application**: Provides the user interface and coordinates the components
-
-### Query Processing Flow
-
-1. User inputs a query through the menu interface
-2. The agent processes the query using the appropriate mode (informational, visualization, or SQL)
-3. For informational queries:
-   - The LLM generates a structured analysis plan
-   - The data processor executes the plan (filtering, aggregation, etc.)
-   - The agent generates a natural language summary of the results
-4. For visualization requests:
-   - The LLM generates visualization parameters
-   - The visualizer creates the requested chart
-   - The visualization is stored for the dashboard
-5. For SQL queries:
-   - The LLM converts the natural language to SQL
-   - The SQL query and explanation are displayed to the user
+- **Frontend**: A React single-page application that provides the user interface.
+- **Web Server / Proxy**: An Nginx container that serves the static React files and acts as a reverse proxy, forwarding API requests to the backend.
+- **Backend**: A Python Flask server that exposes a REST API. It contains the core logic:
+  - **DataAnalysisAgent**: The "brain" that uses the Gemini LLM to interpret queries and create analysis plans.
+  - **DataProcessor**: Handles all data loading and manipulation with pandas.
+  - **Visualizer**: Creates interactive charts with Plotly.
+- **Session Store**: A Redis container used to cache DataFrames between requests, enabling stateful analysis sessions.
+- **Cloud Platform**: AWS provides the underlying infrastructure, managed by Terraform:
+  - **Compute**: AWS ECS with Fargate for serverless container orchestration.
+  - **Networking**: A custom VPC with public subnets, an Internet Gateway, and an Application Load Balancer (ALB).
+  - **Container Registry**: Amazon ECR to store the frontend and backend Docker images.
 
 ## File Structure
 
-- `main.py`: Entry point with menu interface and handler functions
-- `src/agent.py`: Core agent implementation with LLM integration
-- `src/data_processor.py`: Data loading and processing functionality
-- `src/visualizer.py`: Visualization creation and management
-- `.env`: Environment variables (not in repository)
+```
+davi/
+├── .github/              # CI/CD workflows (e.g., Jenkins, GitHub Actions)
+├── backend/              # Flask backend application
+│   ├── src/
+│   │   ├── agent.py
+│   │   ├── data_processor.py
+│   │   └── visualizer.py
+│   ├── .env              # Local environment variables (e.g., GOOGLE_API_KEY)
+│   ├── app.py            # Main Flask application file
+│   ├── Dockerfile
+│   └── requirements.txt
+├── frontend/             # React frontend application
+│   ├── src/
+│   │   └── App.jsx       # Main React component
+│   ├── Dockerfile
+│   ├── nginx.conf        # Nginx configuration for serving and proxying
+│   └── package.json
+├── terraform/            # All Terraform IaC files
+│   ├── main.tf           # VPC, Subnets, IGW
+│   ├── alb.tf            # Application Load Balancer
+│   ├── ecs.tf            # ECS Cluster, Task Definition, Service
+│   ├── ecr.tf            # ECR Repositories
+│   ├── security_groups.tf
+│   └── variables.tf
+├── .gitignore
+└── docker-compose.yml    # Docker Compose file for local full-stack deployment
+```
 
-## Dependencies
+## Getting Started: Running 'davi'
 
-- **pandas**: Data manipulation and analysis
-- **plotly**: Interactive visualizations
-- **google-generativeai**: Google's Gemini API for LLM capabilities
-- **langchain-google-genai**: LangChain integration for Gemini
-- **python-dotenv**: Environment variable management
-- **numpy**: Numerical operations
-- **webbrowser**: Opening dashboard in browser
+This application can be run in three distinct ways.
+
+### Method 1: Command-Line Tool (Backend Only)
+
+This is the original, lightweight method for performing quick, backend-only data analysis without a web interface.
+
+- **Purpose:** Quick analysis, scripting, and testing the core Python logic.
+- **How to Run:**
+  1. Navigate to the project root, activate your Python virtual environment, and install dependencies (`pip install -r backend/requirements.txt`).
+  2. Ensure your `GOOGLE_API_KEY` is set as an environment variable or is in a `.env` file.
+  3. Run the main script:
+     ```bash
+     python main.py
+     ```
+
+### Method 2: Local Web Application (via Docker Compose)
+
+This method runs the complete full-stack application (Frontend, Backend, Redis) on your local machine using containers. This is the standard way to develop and test.
+
+- **Purpose:** Local development and testing of the full application in a production-like environment.
+- **How to Run:**
+  1. Ensure Docker Desktop is installed and running.
+  2. Create a `.env` file in the `backend/` directory with your `GOOGLE_API_KEY`.
+  3. From the project root directory, run the command:
+     ```bash
+     docker-compose up --build
+     ```
+  4. Access the application in your web browser at: **`http://localhost:3000`**
+
+### Method 3: Cloud Deployment (via Terraform & AWS)
+
+This method builds the entire cloud infrastructure from scratch and deploys the application for public access.
+
+- **Purpose:** Deploying the application to a live, production environment.
+- **How to Run:**
+  1. **Build and Push Docker Images:** You must first build your local Docker images and push them to the ECR repositories that Terraform will create.
+  2. **Deploy the Infrastructure:**
+     - Navigate to the `/terraform` directory.
+     - Run `terraform init`.
+     - Run `terraform apply`. You will be prompted to enter your `gemini_api_key`.
+  3. **Access the Live Application:**
+     - Once `terraform apply` is complete, it will display the `alb_dns_name` in the outputs.
+     - Paste this DNS name into your web browser to access your application.
+
+## Prerequisites & Dependencies
+
+- **System-Level:**
+  - Python 3.8+
+  - Node.js (for frontend development)
+  - Docker & Docker Compose
+  - Terraform
+  - AWS CLI
+- **Backend (Python):** See `backend/requirements.txt`. Key libraries include `Flask`, `pandas`, `google-generativeai`, and `redis`.
+- **Frontend (JavaScript):** See `frontend/package.json`. Key libraries include `react` and `plotly.js`.
 
 ## Environment Variables
-- `GOOGLE_API_KEY`: Required for accessing Google's Gemini API
 
-## Advanced Features
+- `GOOGLE_API_KEY`: **Required.** Your API key for the Google Gemini service.
+  - For Docker/local development, place it in `backend/.env`.
+  - For AWS deployment, Terraform will prompt you for it securely.
 
-### Filtering Capabilities
+## Backend Capabilities
 
-The data processor supports various filtering operations:
-- Equality (`==`)
-- Inequality (`!=`)
-- Comparisons (`>`, `<`, `>=`, `<=`)
-- List inclusion (`in`, `isin`)
-- List exclusion (`not in`)
+The backend processing engine supports a wide range of operations:
 
-### Aggregation Functions
-
-Supported aggregation functions:
-- `sum`: Calculate the sum of values
-- `mean`: Calculate the average of values
-- `count`: Count the number of values
-- `min`: Find the minimum value
-- `max`: Find the maximum value
-- `size`: Count the number of rows
-
-### Visualization Types
-
-The visualizer supports multiple chart types:
-- Bar charts
-- Line charts
-- Scatter plots
-- Histograms
-- Pie charts
-- Box plots
-- Heatmaps
-
-### Dashboard Features
-
-The dashboard generation includes:
-- Responsive layout
-- Interactive Plotly charts
-- Automatic browser opening
-- Multiple visualizations in a single view
+- **Filtering:** Equality (`==`), inequality (`!=`), comparisons (`>`, `<`, `>=`, `<=`), and list inclusion/exclusion (`in`, `not in`).
+- **Aggregation Functions:** `sum`, `mean`, `count`, `min`, `max`, `size`.
+- **Visualization Types:** Bar charts, line charts, scatter plots, histograms, pie charts, box plots, and heatmaps.
