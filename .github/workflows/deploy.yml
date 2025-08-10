@@ -27,7 +27,7 @@ jobs:
       - name: Configure AWS Credentials with OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::231712211814/GitHubActions-davi-Role
+          role-to-assume: arn:aws:iam::231712211814:role/GitHubActions-davi-Role
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Log in to Amazon ECR
