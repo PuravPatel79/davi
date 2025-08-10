@@ -23,5 +23,5 @@ terraform.tfstate.backup
 .DS_Store
 
 # Output files
-*.html
+dashboard.html
 *.csv
