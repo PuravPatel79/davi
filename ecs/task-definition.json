@@ -15,6 +15,12 @@
             "image": "IMAGE_PLACEHOLDER_BACKEND",
             "essential": true,
             "portMappings": [ { "hostPort": 5000, "containerPort": 5000, "protocol": "tcp" } ],
+            "environment": [
+                {
+                    "name": "GOOGLE_API_KEY",
+                    "value": "API_KEY_PLACEHOLDER"
+                }
+            ],
             "logConfiguration": { "logDriver": "awslogs", "options": { "awslogs-group": "/ecs/davi", "awslogs-region": "us-east-2", "awslogs-stream-prefix": "backend" } },
             "dependsOn": [ { "containerName": "redis", "condition": "START" } ]
         },
