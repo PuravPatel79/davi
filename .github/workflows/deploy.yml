@@ -61,8 +61,8 @@ jobs:
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: ${{ env.ECS_TASK_DEFINITION }}
-          container-name: davi-frontend,davi-backend,redis
-          image: ${{ steps.build-frontend-image.outputs.image }},${{ steps.build-backend-image.outputs.image }},redis:alpine
+          container-name: davi-frontend,davi-backend
+          image: ${{ steps.build-frontend-image.outputs.image }},${{ steps.build-backend-image.outputs.image }}
 
       - name: Deploy Amazon ECS task definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
