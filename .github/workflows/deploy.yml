@@ -10,7 +10,7 @@ env:
   ECR_REPOSITORY_BACKEND: davi-backend
   ECS_SERVICE: davi-service
   ECS_CLUSTER: davi-cluster
-  ECS_TASK_DEFINITION: ecs/task-definition.json
+  ECS_TASK_DEFINITION_TEMPLATE: ecs/task-definition.json
   AWS_REGION: us-east-2
 
 jobs:
@@ -53,21 +53,27 @@ jobs:
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG ./backend
           docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG" >> $GITHUB_OUTPUT
+      
+      - name: Create new task definition file with updated values
+        id: task-def-file
+        run: |
+          # Create a new file for the updated task definition
+          cp $ECS_TASK_DEFINITION_TEMPLATE task-definition.json
 
-      - name: Fill in the new image IDs in the Amazon ECS task definition
-        id: task-def
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: ${{ env.ECS_TASK_DEFINITION }}
-          container-name: davi-frontend,davi-backend
-          image: ${{ steps.build-frontend-image.outputs.image }},${{ steps.build-backend-image.outputs.image }}
-          environment-variables: |
-            davi-backend,GOOGLE_API_KEY,${{ secrets.GOOGLE_API_KEY }}
+          # Replace the image placeholders
+          sed -i "s|IMAGE_PLACEHOLDER_FRONTEND|${{ steps.build-frontend-image.outputs.image }}|g" task-definition.json
+          sed -i "s|IMAGE_PLACEHOLDER_BACKEND|${{ steps.build-backend-image.outputs.image }}|g" task-definition.json
+          
+          # Replace the API key placeholder
+          sed -i "s|API_KEY_PLACEHOLDER|${{ secrets.GOOGLE_API_KEY }}|g" task-definition.json
+          
+          # Output the path to the new file
+          echo "task_definition_path=task-definition.json" >> $GITHUB_OUTPUT
 
       - name: Deploy Amazon ECS task definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
-          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          task-definition: ${{ steps.task-def-file.outputs.task_definition_path }}
           service: ${{ env.ECS_SERVICE }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
