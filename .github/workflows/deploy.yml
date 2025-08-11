@@ -1,4 +1,4 @@
-name: Davi CI/CD Pipeline
+name: davi CI/CD Pipeline
 
 on:
   push:
