@@ -57,7 +57,7 @@ jobs:
       # --- NEW DEBUGGING STEPS START HERE ---
       - name: List files in workspace
         run: ls -R
-        
+
       - name: Display task definition content
         run: cat ${{ env.ECS_TASK_DEFINITION }}
       # --- NEW DEBUGGING STEPS END HERE ---
@@ -67,10 +67,8 @@ jobs:
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: ${{ env.ECS_TASK_DEFINITION }}
-          container-name: davi-frontend,davi-backend
-          image: ${{ steps.build-frontend-image.outputs.image }},${{ steps.build-backend-image.outputs.image }}
-          environment-variables: |
-            davi-backend,GOOGLE_API_KEY,${{ secrets.GOOGLE_API_KEY }}
+          container-name: davi-frontend
+          image: ${{ steps.build-frontend-image.outputs.image }}
 
       - name: Deploy Amazon ECS task definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
