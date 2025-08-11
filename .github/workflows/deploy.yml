@@ -54,6 +54,14 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG" >> $GITHUB_OUTPUT
       
+      # --- NEW DEBUGGING STEPS START HERE ---
+      - name: List files in workspace
+        run: ls -R
+        
+      - name: Display task definition content
+        run: cat ${{ env.ECS_TASK_DEFINITION }}
+      # --- NEW DEBUGGING STEPS END HERE ---
+
       - name: Fill in the new image IDs in the Amazon ECS task definition
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
