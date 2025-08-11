@@ -29,6 +29,7 @@
             "image": "redis:alpine",
             "essential": true,
             "portMappings": [ { "hostPort": 6379, "containerPort": 6379, "protocol": "tcp" } ],
+            "environment":[],
             "logConfiguration": { "logDriver": "awslogs", "options": { "awslogs-group": "/ecs/davi", "awslogs-region": "us-east-2", "awslogs-stream-prefix": "redis" } }
         }
     ],
