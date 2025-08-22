@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import os
+import requests
 from typing import Dict, Any, List, Optional, Union
 
 class DataProcessor:
@@ -9,74 +10,67 @@ class DataProcessor:
         self.metadata = {}
 
     def load_data(self, file_path: str) -> pd.DataFrame:
-        """Load data from CSV or Excel file or URL"""
+        """Load data from CSV or Excel file or URL with robust validation."""
+        
+        # Whitelist of allowed content types for remote files
+        ALLOWED_CONTENT_TYPES = {
+            'text/csv',
+            'application/csv',
+            'text/plain',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/octet-stream'
+        }
+
         try:
-            # Handle URLs
+            # --- Handle URLs with new 2-step validation ---
             if file_path.startswith("http://") or file_path.startswith("https://"):
-                print(f"Loading data from URL: {file_path}")
-                if file_path.endswith(".csv"):
-                    self.dataframe = pd.read_csv(file_path)
-                    print("Successfully loaded CSV from URL")
-                elif file_path.endswith((".xls", ".xlsx")):
-                    self.dataframe = pd.read_excel(file_path)
-                    print("Successfully loaded Excel from URL")
-                else:
-                    try:
+                print(f"Validating and loading data from URL: {file_path}")
+
+                # Step 1: Fast Header Check for Content-Type
+                try:
+                    with requests.get(file_path, stream=True, timeout=10) as r:
+                        r.raise_for_status() # Will raise an exception for 4xx/5xx errors
+                        content_type = r.headers.get('Content-Type', '').split(';')[0].strip()
+                        
+                        if content_type not in ALLOWED_CONTENT_TYPES:
+                            raise ValueError(f"Unsupported file type. Server reported '{content_type}'.")
+                except requests.exceptions.RequestException as e:
+                    raise ValueError(f"Could not access the URL: {e}")
+
+                # Step 2: Structure Check with Pandas' robust parsing
+                try:
+                    if file_path.endswith(".csv") or content_type in {'text/csv', 'application/csv', 'text/plain'}:
                         self.dataframe = pd.read_csv(file_path)
-                        print("Successfully loaded CSV from URL")
-                    except pd.errors.ParserError:
-                        try:
-                            self.dataframe = pd.read_csv(file_path, sep=";")
-                            print("Successfully loaded CSV with semicolon delimiter from URL")
-                        except pd.errors.ParserError:
-                            try:
-                                self.dataframe = pd.read_csv(file_path, sep="\t")
-                                print("Successfully loaded CSV with tab delimiter from URL")
-                            except pd.errors.ParserError:
-                                try:
-                                    self.dataframe = pd.read_csv(file_path, engine="python")
-                                    print("Successfully loaded CSV with python engine from URL")
-                                except Exception as url_csv_err:
-                                    raise ValueError(f"Could not parse URL content as CSV/Excel: {file_path}") from url_csv_err
+                    elif file_path.endswith((".xls", ".xlsx")) or content_type in {'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}:
+                        self.dataframe = pd.read_excel(file_path)
+                    else:
+                        # Fallback for generic types like application/octet-stream by trying CSV first
+                        print("Attempting to parse generic file type...")
+                        self.dataframe = pd.read_csv(file_path)
+
+                except (pd.errors.ParserError, ValueError, Exception) as e:
+                    # This catches malformed files (like HTML served as text/plain)
+                    raise ValueError(f"File content is not a valid CSV or Excel format. Please check the file structure. Error: {e}")
+
+            # --- Handle Local Files ---
             elif os.path.exists(file_path):
                 if file_path.endswith(".csv"):
-                    loaded = False
-                    try:
-                        self.dataframe = pd.read_csv(file_path)
-                        loaded = True
-                    except pd.errors.ParserError:
-                        print("ParserError with default CSV settings, trying semicolon delimiter...")
-                        try:
-                            self.dataframe = pd.read_csv(file_path, sep=";")
-                            loaded = True
-                        except pd.errors.ParserError:
-                            print("ParserError with semicolon delimiter, trying tab delimiter...")
-                            try:
-                                self.dataframe = pd.read_csv(file_path, sep="\t")
-                                loaded = True
-                            except pd.errors.ParserError:
-                                print("ParserError with tab delimiter, trying python engine...")
-                                try:
-                                    self.dataframe = pd.read_csv(file_path, engine="python")
-                                    loaded = True
-                                except Exception as final_e:
-                                    print(f"Failed to load CSV with python engine: {final_e}")
-                                    raise ValueError(f"Could not parse CSV file {file_path} with any engine.") from final_e
-                    if loaded:
-                        print(f"Successfully loaded local CSV file: {file_path}")
-                    else:
-                        raise ValueError(f"Failed to load CSV file: {file_path}")
+                    self.dataframe = pd.read_csv(file_path)
                 elif file_path.endswith((".xls", ".xlsx")):
                     self.dataframe = pd.read_excel(file_path)
-                    print(f"Successfully loaded local Excel file: {file_path}")
                 else:
-                    raise ValueError("Unsupported file format. Use CSV or Excel files.")
+                    raise ValueError("Unsupported local file format. Use CSV or Excel files.")
             else:
-                raise ValueError(f"File not found: {file_path}")
+                raise FileNotFoundError(f"File not found at the specified path: {file_path}")
+
             self._extract_metadata()
+            print("Data loaded successfully.")
             return self.dataframe
-        except Exception as e:
+
+        except (ValueError, FileNotFoundError, Exception) as e:
             print(f"Error loading data: {str(e)}")
+            # Re-raise the exception so the calling function in app.py can catch it
             raise
 
     def _extract_metadata(self):
@@ -162,13 +156,11 @@ class DataProcessor:
                         filtered_df = filtered_df[col_series.isin(value)]
                     else:
                         print(f"Warning: 'isin' operator requires a list value for column '{column}'. Skipping filter.")
-                # Add support for 'in' operator (same as 'isin')
                 elif operator == "in":
                     if isinstance(value, list):
                         filtered_df = filtered_df[col_series.isin(value)]
                     else:
                         print(f"Warning: 'in' operator requires a list value for column '{column}'. Skipping filter.")
-                # Add support for 'not in' operator
                 elif operator == "not in":
                     if isinstance(value, list):
                         filtered_df = filtered_df[~col_series.isin(value)]
@@ -201,7 +193,6 @@ class DataProcessor:
         if dataframe_to_agg is None:
             raise ValueError("No data loaded yet. Either load data first or provide a dataframe.")
         
-        # Handle empty group_by_columns
         if not group_by_columns:
             result_df = pd.DataFrame()
             for output_col, (source_col, agg_func) in agg_specs.items():
@@ -225,7 +216,6 @@ class DataProcessor:
                     raise ValueError(f"Unsupported aggregation function: {agg_func}")
             return result_df
         
-        # Process grouped aggregations
         for col in group_by_columns:
             if col not in dataframe_to_agg.columns:
                 raise ValueError(f"Group by column '{col}' not found in the dataframe being aggregated.")
@@ -278,7 +268,7 @@ class DataProcessor:
 
         if df_to_process is None:
             print("Warning: No data loaded or provided. Cannot preprocess.")
-            return None # Or raise error
+            return None
 
         for step in steps:
             operation = step.get('operation')
@@ -317,14 +307,14 @@ class DataProcessor:
                     df_to_process.dropna(subset=[column], inplace=True)
                 elif operation == 'rename_column':
                     df_to_process.rename(columns={old_name: new_name}, inplace=True)
-                    if df_input is None: # Only update metadata if modifying self.dataframe
+                    if df_input is None:
                         if old_name in self.metadata.get('columns', []):
                             self.metadata['columns'] = [new_name if c == old_name else c for c in self.metadata['columns']]
                             if old_name in self.metadata.get('dtypes', {}):
                                 self.metadata['dtypes'][new_name] = self.metadata['dtypes'].pop(old_name)
                 elif operation == 'drop_column':
                     df_to_process.drop(columns=[column], inplace=True)
-                    if df_input is None: # Only update metadata if modifying self.dataframe
+                    if df_input is None:
                         if column in self.metadata.get('columns', []):
                             self.metadata['columns'].remove(column)
                             self.metadata['dtypes'].pop(column, None)

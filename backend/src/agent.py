@@ -120,6 +120,17 @@ ORDER BY TotalSales DESC;
 This query calculates the total sales for each country by summing the Sales column, grouping the results by Country, and sorting them in descending order of total sales.
 """
 
+        self.code_generation_instructions = """
+INSTRUCTIONS:
+- You are an expert Python data scientist. Your task is to write a Python script to answer the user's query.
+- **CRITICAL RULE 1**: The script MUST start by importing pandas and loading the dataset from 'data.csv' into a DataFrame named `df`. Example: `import pandas as pd\\ndf = pd.read_csv('data.csv')`
+- The script should be self-contained and perform all necessary analysis.
+- **CRITICAL RULE 2**: Do NOT include any explanations, comments, or markdown formatting. Output ONLY the raw Python code.
+- For data analysis (e.g., calculating totals, filtering), the script MUST end by printing the final DataFrame to stdout (e.g., `print(result_df.to_string())`).
+- **CRITICAL FOR VISUALIZATIONS**: For visualization requests, the script MUST generate a Plotly figure object and assign it to a variable named `fig` (e.g., `fig = px.bar(...)`). The script MUST then end by printing the figure's JSON representation to stdout (e.g., `print(fig.to_json())`).
+- Use only the libraries available: pandas, plotly.express as px, plotly.graph_objects as go.
+"""
+
         self.base_template = """
 You are an expert data analyst assistant. Your task is to analyze the following dataset and respond to the user's query based on the provided instructions.
 
@@ -162,19 +173,11 @@ USER QUERY:
             
         return False
 
-    def process_query(self, query: str, mode: Literal["informational", "visualization", "sql"]) -> Dict[str, Any]:
+    def process_query(self, query: str, mode: Literal["informational", "visualization", "sql", "code_execution"]) -> Dict[str, Any]:
         try:
             # Check if the query is a greeting or casual message
             if self._is_greeting_or_casual_message(query):
-                fun_responses = [
-                    "I'm all about the data life! Ask me something about your dataset and let's make those numbers talk!",
-                    "Hey there! While I'd love to chat about your day, I'm really excited to dive into your data questions!",
-                    "Numbers are my jam! Skip the small talk and hit me with your data questions - that's where the magic happens!",
-                    "Data detective at your service! Rather than discussing the weather, let's uncover some insights in your dataset!",
-                    "I'm like a data DJ - ready to spin some analytical insights! What data track would you like to play?"
-                ]
-                import random
-                return {"success": True, "message": random.choice(fun_responses), "visualization": None}
+                return {"success": True, "message": "Hello! How can I help you with your data today?"}
             
             data_info = self.data_processor.get_column_info()
             
@@ -185,6 +188,8 @@ USER QUERY:
                 mode_instructions = self.visualization_instructions
             elif mode == "sql":
                 mode_instructions = self.sql_instructions
+            elif mode == "code_execution":
+                mode_instructions = self.code_generation_instructions
             else:
                 return {"success": False, "message": f"Unsupported mode: {mode}", "visualization": None}
             
@@ -197,7 +202,12 @@ USER QUERY:
             response = self.llm.invoke(final_prompt)
             response_text = self._extract_response_text(response)
             
-            # Handle SQL mode differently since it doesn't use JSON
+            # Handle SQL and Code Generation mode differently since it doesn't use JSON
+            if mode == "code_execution":
+                # The response is the raw code, so just cleaning it up
+                cleaned_code = self._clean_code_response(response_text)
+                return {"success": True, "message": cleaned_code}
+            
             if mode == "sql":
                 return self._handle_sql_request(response_text)
                 
@@ -218,6 +228,7 @@ USER QUERY:
                 else:
                     print(f"Warning: Expected JSON in visualization mode, got plain text.")
                     return {"success": False, "message": f"Expected JSON plan, got: {self._clean_response(response_text)}", "visualization": None}
+
         except Exception as e:
             print(f"Error processing query: {str(e)}")
             traceback.print_exc()
@@ -273,7 +284,7 @@ USER QUERY:
 
     def _extract_response_text(self, response: Any) -> str:
         if hasattr(response, 'content'): return response.content
-        if isinstance(response, dict) and 'text' in response: return response['text']
+        # if isinstance(response, dict) and 'text' in response: return response['text']
         return str(response)
 
     def _extract_json_plan(self, response_text: str) -> Optional[Dict[str, Any]]:
@@ -292,6 +303,14 @@ USER QUERY:
         text = re.sub(r"^\s*\{.*?\}\s*$", "", text, flags=re.DOTALL | re.MULTILINE)
         text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
         text = re.sub(r"\n\s*\n", "\n\n", text)
+        return text.strip()
+
+    def _clean_code_response(self, text: str) -> str:
+        """Cleans the response to extract only the raw Python code."""
+        match = re.search(r"```python\n(.*?)\n```", text, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        # Fallback for cases where markdown is missing
         return text.strip()
 
     def _handle_visualization_request(self, viz_plan: Dict[str, Any]) -> Dict[str, Any]:
@@ -373,7 +392,7 @@ USER QUERY:
             
             current_df = df.copy()
 
-            # --- Normalize and Apply Filters --- 
+            # Normalize and Apply Filters 
             filters_from_plan = analysis_plan.get("filters", [])
             normalized_filters = self._normalize_filters(filters_from_plan)
             
@@ -388,7 +407,7 @@ USER QUERY:
             elif filters_from_plan:  # If there was a filter plan but none were valid after normalization
                 print(f"No valid filters to apply after normalization. Original filter plan was: {filters_from_plan}")
 
-            # --- Apply Aggregation --- 
+            # Apply Aggregation 
             aggregation_plan = analysis_plan.get("aggregation")
             if aggregation_plan:
                 # Default to empty list for group_by if not provided (for total calculations)
@@ -414,7 +433,7 @@ USER QUERY:
                 else:
                     print("Warning: Aggregation plan missing 'agg_specs'. Skipping.")
 
-            # --- Apply Post-Aggregation Calculations --- 
+            # Apply Post-Aggregation Calculations
             post_aggregation_plan = analysis_plan.get("post_aggregation")
             if post_aggregation_plan and isinstance(post_aggregation_plan, dict):
                 calculations = post_aggregation_plan.get("calculations")
@@ -450,7 +469,7 @@ USER QUERY:
                         else:
                             print(f"Warning: Invalid calculation specification: {calc}. Skipping calculation.")
 
-            # --- Apply Sorting --- 
+            # Apply Sorting
             sort_plan = analysis_plan.get("sort_by")
             if sort_plan and isinstance(sort_plan, dict):
                 sort_col = sort_plan.get("column")
@@ -465,7 +484,7 @@ USER QUERY:
                     else:
                         print(f"Warning: Sort column '{sort_col}' not found in processed data. Skipping sorting.")
 
-            # --- Apply Limit --- 
+            # Apply Limit
             limit_val = analysis_plan.get("limit")
             if limit_val is not None:
                 try:
@@ -478,7 +497,7 @@ USER QUERY:
                 except (ValueError, TypeError):
                     print(f"Warning: Invalid limit value '{limit_val}'. Must be an integer. Skipping limit.")
             
-            # --- Generate Summary Text --- 
+            # Generate Summary Text
             summary_prompt_template = """
 Based on the user's query: '{user_query}'
 And the following data result:

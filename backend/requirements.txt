@@ -130,3 +130,8 @@ zope.event==5.1.1
 zope.interface==7.2
 zstandard==0.23.0
 gunicorn
+flask-socketio
+docker
+gevent
+gevent-websocket
+boto3
