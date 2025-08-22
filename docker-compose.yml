@@ -10,10 +10,14 @@ services:
     # Set the REDIS_HOST environment variable for the local environment
     environment:
       - REDIS_HOST=redis
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./backend:/app
     networks:
       - davi-net
     depends_on:
       - redis
+      - sandbox
 
   # Frontend Service (React App with Nginx)
   frontend:
@@ -40,6 +44,13 @@ services:
       - "6379:6379"
     networks:
       - davi-net
+
+# Sandbox container
+  sandbox:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.sandbox
+    image: davi-sandbox:latest
 
 # Define the network that allows containers to communicate
 networks:
