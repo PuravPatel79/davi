@@ -8,6 +8,7 @@ on:
 env:
   ECR_REPOSITORY_FRONTEND: davi-frontend
   ECR_REPOSITORY_BACKEND: davi-backend
+    ECR_REPOSITORY_SANDBOX: davi-sandbox
   ECS_SERVICE: davi-service
   ECS_CLUSTER: davi-cluster
   ECS_TASK_DEFINITION_TEMPLATE: ecs/task-definition.json
@@ -54,6 +55,16 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG" >> $GITHUB_OUTPUT
       
+      - name: Build, tag, and push sandbox image
+        id: build-sandbox-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_SANDBOX:$IMAGE_TAG -f ./backend/Dockerfile.sandbox ./backend
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_SANDBOX:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY_SANDBOX:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
       - name: Create new task definition file with updated values
         id: task-def-file
         run: |
