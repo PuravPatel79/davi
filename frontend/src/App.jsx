@@ -1,7 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import PlotlyChart from './PlotlyChart';
+import { io } from 'socket.io-client';
+import Editor from 'react-simple-code-editor';
+import { highlight, languages } from 'prismjs/components/prism-core';
+import 'prismjs/components/prism-python';
+import 'prismjs/themes/prism-tomorrow.css';
 
-// --- Styles ---
+//Styles
 const styles = {
   appWrapper: {
     display: 'flex',
@@ -91,9 +96,10 @@ const styles = {
   modeSelector: {
     display: 'flex',
     justifyContent: 'center',
-    gap: '20px',
+    gap: '10px',
     marginBottom: '25px',
     textAlign: 'left',
+    flexWrap: 'wrap',
   },
   table: {
     width: '100%',
@@ -121,7 +127,24 @@ const styles = {
     fontSize: '0.95em',
     whiteSpace: 'pre',
   },
+  editorContainer: {
+    border: '1px solid #ddd',
+    borderRadius: '8px',
+    marginBottom: '10px',
+    fontFamily: "'Fira Code', 'Courier New', monospace",
+  },
+  editorOutput: {
+    backgroundColor: '#f9f9f9',
+    border: '1px solid #eee',
+    padding: '15px',
+    borderRadius: '8px',
+    whiteSpace: 'pre-wrap',
+    minHeight: '50px',
+    fontFamily: 'monospace',
+  },
 };
+
+const socket = io(); // Initialize socket connection
 
 function App() {
   const [sessionId, setSessionId] = useState(null);
@@ -129,10 +152,56 @@ function App() {
   const [datasetUrl, setDatasetUrl] = useState('');
   const [query, setQuery] = useState('');
   const [analysisResult, setAnalysisResult] = useState(null);
-  const [mode, setMode] = useState('informational'); 
+  const [mode, setMode] = useState('informational');
   const [chartRevision, setChartRevision] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // New state for code execution mode
+  const [sandboxSessionId, setSandboxSessionId] = useState(null);
+  const [code, setCode] = useState('');
+  const [executionResult, setExecutionResult] = useState(null);
+  const [isExecuting, setIsExecuting] = useState(false);
+
+  // WebSocket Connection Handling
+  useEffect(() => {
+    if (sandboxSessionId) {
+      console.log("Establishing WebSocket connection...");
+      
+      socket.on('connect', () => {
+        console.log('Socket connected!');
+        socket.emit('register_session', { sandbox_session_id: sandboxSessionId });
+      });
+
+      socket.on('code_result', (data) => {
+        console.log('Received code result:', data);
+        setExecutionResult(data.output || { type: 'text', data: data.error });
+        setIsExecuting(false);
+      });
+
+      socket.on('disconnect', () => {
+        console.log('Socket disconnected.');
+      });
+      
+      if(!socket.connected) {
+        socket.connect();
+      } else {
+        socket.emit('register_session', { sandbox_session_id: sandboxSessionId });
+      }
+
+    } else if (socket.connected) {
+        console.log("Sandbox session ended, disconnecting socket.");
+        socket.disconnect();
+    }
+    
+    return () => {
+      if (socket.connected) {
+        console.log("Cleaning up WebSocket connection.");
+        socket.disconnect();
+      }
+    };
+  }, [sandboxSessionId]);
+
 
   const handleLoadData = async (event) => {
     event.preventDefault();
@@ -145,9 +214,9 @@ function App() {
     setDataInfo(null);
     setSessionId(null);
     setAnalysisResult(null);
+    setSandboxSessionId(null);
 
     try {
-      // Relative path for the API call to work with the Nginx proxy
       const res = await fetch('/api/load', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -175,19 +244,37 @@ function App() {
     setIsLoading(true);
     setError(null);
     setAnalysisResult(null);
+    setExecutionResult(null);
 
     try {
-      // Relative path for the API call to work with the Nginx proxy
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, query: query, mode: mode }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to analyze data.');
-      
-      setAnalysisResult(data);
-      setChartRevision(prevRevision => prevRevision + 1);
+      if (mode === 'code_execution') {
+        const res = await fetch('/api/execute/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId, query: query }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to start execution session.');
+
+        setSandboxSessionId(data.sandbox_session_id);
+        setCode(data.initial_code);
+        setExecutionResult(data.initial_result.output || { type: 'text', data: data.initial_result.error });
+
+      } else {
+        setSandboxSessionId(null);
+        const res = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId, query: query, mode: mode }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to analyze data.');
+        
+        setAnalysisResult(data);
+        if (data.visualization) {
+            setChartRevision(prev => prev + 1);
+        }
+      }
 
     } catch (err) {
       setError(err.message);
@@ -195,14 +282,97 @@ function App() {
       setIsLoading(false);
     }
   };
+  
+  const handleRerunCode = () => {
+    if (code && sandboxSessionId && socket.connected) {
+        setIsExecuting(true);
+        setExecutionResult(null);
+        console.log("Emitting 'execute_code' with code:", code);
+        socket.emit('execute_code', {
+            sandbox_session_id: sandboxSessionId,
+            code: code
+        });
+    } else {
+        setError("Cannot execute code. No active session or connection.");
+    }
+  };
+
+  const renderExecutionOutput = () => {
+    if (isExecuting) return "Waiting for result...";
+    if (!executionResult) return null;
+
+    if (executionResult.type === 'visualization') {
+        let isValidChart = false;
+        if (executionResult.data && typeof executionResult.data === 'string') {
+            try {
+                const parsed = JSON.parse(executionResult.data);
+                if (parsed.data && parsed.layout) {
+                    isValidChart = true;
+                }
+            } catch (e) {
+                // Not valid JSON
+            }
+        }
+
+        if (isValidChart) {
+            return <PlotlyChart chartJSON={executionResult.data} />;
+        } else {
+            return (
+                <div style={{ color: 'red', fontWeight: 'bold' }}>
+                    Error: Received a 'visualization' type result, but the data was not a valid Plotly chart JSON.
+                    <pre style={styles.editorOutput}>{executionResult.data}</pre>
+                </div>
+            );
+        }
+    }
+    
+    if (executionResult.type === 'text') {
+        return <pre style={styles.editorOutput}>{executionResult.data}</pre>;
+    }
+
+    return <pre style={{...styles.editorOutput, color: 'red'}}>{executionResult.data || executionResult}</pre>;
+  }
 
   const renderResults = () => {
-    if (isLoading && !analysisResult) {
+    if (isLoading && !analysisResult && !executionResult) {
       return <div>Analyzing...</div>;
     }
     if (error) {
       return <div style={styles.error}>Error: {error}</div>;
     }
+    
+    if (mode === 'code_execution' && sandboxSessionId) {
+        return (
+            <div>
+                <h3 style={styles.h3}>Interactive Code Editor</h3>
+                <div style={styles.editorContainer}>
+                    <Editor
+                        value={code}
+                        onValueChange={c => setCode(c)}
+                        highlight={c => highlight(c, languages.python)}
+                        padding={10}
+                        style={{
+                            fontFamily: '"Fira code", "Fira Mono", monospace',
+                            fontSize: 14,
+                            backgroundColor: '#fdfdfd',
+                            minHeight: '200px',
+                        }}
+                    />
+                </div>
+                <button 
+                    style={isExecuting ? {...styles.button, ...styles.buttonDisabled} : styles.button} 
+                    onClick={handleRerunCode}
+                    disabled={isExecuting}
+                  >
+                    {isExecuting ? 'Executing...' : 'Re-run Code'}
+                  </button>
+
+                <h3 style={styles.h3}>Execution Output</h3>
+                {renderExecutionOutput()}
+            </div>
+        )
+    }
+
     if (!analysisResult) {
       return <div>Your results will appear here.</div>;
     }
@@ -265,6 +435,8 @@ function App() {
             return 'e.g., Plot sales by country';
           case 'sql':
             return 'e.g., Show me the top 5 customers by profit';
+          case 'code_execution':
+            return 'e.g., Create a new column "Sales per Unit"';
           default:
             return 'Ask a question about your data...';
       }
@@ -307,31 +479,20 @@ function App() {
               
               <div style={styles.modeSelector}>
                 <label>
-                  <input 
-                    type="radio" 
-                    value="informational" 
-                    checked={mode === 'informational'} 
-                    onChange={(e) => setMode(e.target.value)} 
-                  />
+                  <input type="radio" value="informational" checked={mode === 'informational'} onChange={(e) => setMode(e.target.value)} />
                   Informational
                 </label>
                 <label>
-                  <input 
-                    type="radio" 
-                    value="visualization" 
-                    checked={mode === 'visualization'} 
-                    onChange={(e) => setMode(e.target.value)} 
-                  />
+                  <input type="radio" value="visualization" checked={mode === 'visualization'} onChange={(e) => setMode(e.target.value)} />
                   Visualization
                 </label>
                 <label>
-                  <input 
-                    type="radio" 
-                    value="sql" 
-                    checked={mode === 'sql'} 
-                    onChange={(e) => setMode(e.target.value)} 
-                  />
-                  Natural Language to SQL
+                  <input type="radio" value="sql" checked={mode === 'sql'} onChange={(e) => setMode(e.target.value)} />
+                  NLP to SQL
+                </label>
+                <label>
+                  <input type="radio" value="code_execution" checked={mode === 'code_execution'} onChange={(e) => setMode(e.target.value)} />
+                  Direct Code Execution
                 </label>
               </div>
 

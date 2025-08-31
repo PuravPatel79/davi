@@ -5,38 +5,49 @@ function PlotlyChart({ chartJSON }) {
   const chartContainerRef = useRef(null);
 
   useEffect(() => {
-    // This effect runs after the chart is rendered or updated.
-    // It's designed to measure the true height of the SVG chart.
     const adjustContainerHeight = () => {
       if (chartContainerRef.current) {
         const svgElement = chartContainerRef.current.querySelector('.main-svg');
         if (svgElement) {
           const chartHeight = svgElement.getBoundingClientRect().height;
-          // Set the container's height to perfectly match the SVG's height.
           if (chartHeight > 0) {
             chartContainerRef.current.style.height = `${chartHeight}px`;
           }
         }
       }
     };
-
-    // Plotly can take a moment to draw. We use a short timeout
-    // to ensure we measure the height *after* it has finished rendering.
     const timer = setTimeout(adjustContainerHeight, 150);
-
-    // Cleanup function to prevent memory leaks
     return () => clearTimeout(timer);
-  }, [chartJSON]); // This effect re-runs every time a new chart is requested
+  }, [chartJSON]);
 
   if (!chartJSON) {
     return <div>No chart data available.</div>;
   }
 
-  const chartData = JSON.parse(chartJSON);
+  let chartData;
+  try {
+    chartData = JSON.parse(chartJSON);
+  } catch (error) {
+    console.error("Failed to parse chart JSON:", error);
+    return (
+      <div style={{ color: 'red', fontWeight: 'bold' }}>
+        Error: Could not render the visualization. The data format from the backend was invalid.
+      </div>
+    );
+  }
+
+  // --- FIX IS HERE: Validate the structure of the parsed JSON ---
+  if (!chartData.data || !chartData.layout) {
+    console.error("Invalid chart data structure:", chartData);
+    return (
+        <div style={{ color: 'red', fontWeight: 'bold' }}>
+            Error: The backend returned a chart object with a missing 'data' or 'layout' property.
+        </div>
+    );
+  }
 
   return (
-    // We attach a 'ref' to this div so our code can find and measure it.
-    <div ref={chartContainerRef} style={{ width: '100%', height: '450px' /* An initial height */ }}>
+    <div ref={chartContainerRef} style={{ width: '100%', height: '450px' }}>
       <Plot
         data={chartData.data}
         layout={{ ...chartData.layout, autosize: true }}

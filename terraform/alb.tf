@@ -28,6 +28,14 @@ resource "aws_lb_target_group" "davi_frontend_tg" {
   vpc_id      = aws_vpc.davi_vpc.id
   target_type = "ip" # Required for Fargate, as we don't manage the instances directly
 
+  # Enable stickiness for WebSockets
+  # This ensures that a user's connection stays with the same container.
+  stickiness {
+    type            = "lb_cookie"
+    cookie_duration = 86400 # Stick for one day (in seconds)
+    enabled         = true
+  }
+
   # Health checks ensure traffic is only sent to healthy containers
   health_check {
     path                = "/" # The root path of our frontend should be available

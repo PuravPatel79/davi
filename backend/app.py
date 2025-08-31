@@ -9,7 +9,7 @@ import pickle
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from flask_cors import CORS
-import plotly.graph_objects as go
+from flask_socketio import SocketIO, emit
 
 # --- More robust path handling ---
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -19,11 +19,14 @@ sys.path.append(os.path.join(BASE_DIR, 'src'))
 from agent import DataAnalysisAgent
 from data_processor import DataProcessor
 from visualizer import Visualizer
+from sandbox_exec import SandboxExecutor
 
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 app = Flask(__name__)
 CORS(app)
+# Initiaize SocketIO for real-time communication
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 # --- Connect to Redis ---
 try:
@@ -38,10 +41,16 @@ except redis.exceptions.ConnectionError as e:
     print(f"Could not connect to Redis: {e}")
     redis_client = None
 
+# Initialize the Sandbox Executor
+sandbox_executor = SandboxExecutor()
+# Dictionary to map WebSocket session IDs to our sandbox session IDs
+socket_to_sandbox_map = {}
+session_strikes = {}
+STRIKE_LIMIT = 3
 
 @app.route('/')
 def home():
-    return "Hello, World! This is the davi API."
+    return "Yo! This is the davi - API."
 
 @app.route('/load', methods=['POST'])
 def load():
@@ -90,7 +99,10 @@ def analyze():
 
     user_query = data['query']
     session_id = data['session_id']
-    mode = data.get('mode', 'informational')
+    mode = data.get('mode', 'informational') # Defaults to 'informational' mode
+
+    if mode == 'code_execution':
+        return jsonify({"error": "Code execution mode must be initiated via the /execute/start endpoint."}), 400
 
     serialized_df = redis_client.get(session_id)
     if serialized_df is None:
@@ -98,7 +110,6 @@ def analyze():
 
     try:
         dataframe = pickle.loads(serialized_df)
-
         data_processor = DataProcessor()
         data_processor.dataframe = dataframe
         data_processor._extract_metadata() 
@@ -109,20 +120,126 @@ def analyze():
         result = agent.process_query(user_query, mode=mode)
 
         if result and result.get("visualization"):
-            fig = result["visualization"]
-            result["visualization"] = fig.to_json()
+            # Ensure visualization is JSON serializable
+            result["visualization"] = result["visualization"].to_json()
 
-        if result and result.get("success"):
-            return jsonify(result)
-        else:
-            error_message = result.get("message", "An unknown error occurred in the agent.")
-            return jsonify({"error": error_message}), 500
+        return jsonify(result)
 
     except Exception as e:
         print(f"An error occurred in /analyze endpoint: {e}")
-        import traceback
-        traceback.print_exc()
         return jsonify({"error": "An internal server error occurred."}), 500
+    
+# Endpoint for Dynamic Analysis (Direct Code Execution mode)
 
+@app.route('/execute/start', methods=['POST'])
+def execute_start():
+    data = request.get_json()
+    session_id = data.get('session_id')
+    query = data.get('query')
+    
+    if not all([session_id, query]):
+        return jsonify({"error": "Missing 'session_id' or 'query'."}), 400
+    
+    # 1. Retrieve and save data to a temporary file for the sandbox
+    serialized_df = redis_client.get(session_id)
+    if not serialized_df:
+        return jsonify({"error": "Invalid or expired session."}), 400
+    
+    df = pickle.loads(serialized_df)
+    
+    # Create a temporary directory for session files
+    temp_dir = os.path.join(BASE_DIR, "temp_data")
+    os.makedirs(temp_dir, exist_ok=True) # <-- FIX IS HERE
+    temp_filepath = os.path.join(temp_dir, f"{session_id}.csv")
+    df.to_csv(temp_filepath, index=False)
+    
+    # 2. Generate initial code with the agent
+    data_processor = DataProcessor()
+    data_processor.dataframe = df
+    data_processor._extract_metadata()
+    agent = DataAnalysisAgent(data_processor, None)
+    initial_code = agent.process_query(query, mode="code_execution")
+    
+    # 3. Start a secure sandbox session
+    sandbox_session_id = sandbox_executor.start_session(temp_filepath)
+    if not sandbox_session_id:
+        return jsonify({"error": "Failed to start safe execution sandbox"}), 500
+    
+    session_strikes[sandbox_session_id] = 0 # Starting session strikes at 0
+    
+    # 4. Run the initial code
+    initial_result = sandbox_executor.execute_code(sandbox_session_id, initial_code['message'])
+    
+    # The websocket URL is in the same server, so just returning the session ID
+    return jsonify({
+        "success": True,
+        "sandbox_session_id": sandbox_session_id,
+        "initial_code": initial_code['message'],
+        "initial_result": initial_result
+    })
+    
+# --- WebSocket Event Handlers for Interactive Visuals ---
+
+@socketio.on('connect')
+def handle_connect():
+    print(f"Client connected: {request.sid}")
+
+@socketio.on('register_session')
+def handle_register_session(data):
+    """Links a websocket SID to a sandbox session ID."""
+    sandbox_session_id = data.get('sandbox_session_id')
+    if sandbox_session_id:
+        socket_to_sandbox_map[request.sid] = sandbox_session_id
+        print(f"Registered socket {request.sid} to sandbox {sandbox_session_id}")
+    
+@socketio.on('execute_code')
+def handle_execute_code(data):
+    """Receives code from the client and runs it in the sandbox."""
+    sandbox_session_id = data.get('sandbox_session_id')
+    code = data.get('code')
+    
+    if sandbox_session_id and code:
+        result = sandbox_executor.execute_code(sandbox_session_id, code)
+        
+        if 'error' in result:
+            # Increment the strike count for this session
+            if sandbox_session_id in session_strikes:
+                session_strikes[sandbox_session_id] += 1
+                print(f"Strike {session_strikes[sandbox_session_id]} for session {sandbox_session_id}")
+                
+            # Check if the strike limit has been reached
+            if session_strikes.get(sandbox_session_id, 0) >= STRIKE_LIMIT:
+                result['error'] = "Session terminated due to multiple execution errors."
+                emit('code_result', result) # Send final error message
+                sandbox_executor.stop_session(sandbox_session_id)
+                # socketio.disconnect(request.sid) 
+                return
+
+        elif 'output' in result:
+            # If execution was successful, reset the strike counter
+            if sandbox_session_id in session_strikes:
+                session_strikes[sandbox_session_id] = 0
+        
+        emit('code_result', result) # Send result back to the client
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Cleans up when a client disconnects."""
+    print(f"Client disconnected: {request.sid}")
+    if request.sid in socket_to_sandbox_map:
+        sandbox_session_id = socket_to_sandbox_map[request.sid]
+        print(f"Cleaning up sandbox session: {sandbox_session_id}")
+        sandbox_executor.stop_session(sandbox_session_id)
+        
+        # Clean up the temporary data file
+        temp_filepath = os.path.join(BASE_DIR, "temp_data", f"{sandbox_session_id}.csv")
+        if os.path.exists(temp_filepath):
+            os.remove(temp_filepath)
+            
+        del socket_to_sandbox_map[request.sid]
+        
+        if sandbox_session_id in session_strikes:
+            del session_strikes[sandbox_session_id]
+            
 if __name__ == '__main__':
-    app.run(debug=True)
+    socketio.run(app, debug=True, port=5000)

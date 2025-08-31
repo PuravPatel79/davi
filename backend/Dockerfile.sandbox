@@ -1,0 +1,20 @@
+# Phase 1: Foundational Backend - The Secure Sandbox
+# Task 1.1: Design the Sandbox Docker Image
+
+# Minimalist, secure base image
+FROM python:3.11-slim
+
+# Dedicated, unprivileged user to run the application
+RUN useradd --create-home appuser
+USER appuser
+WORKDIR /home/appuser
+
+# Environment variable to prevent Python from writing .pyc files
+ENV PYTHONDONTWRITEBYTECODE 1
+
+# Install only the whitelisted libraries required for analysis and visualization
+COPY --chown=appuser:appuser requirements.sandbox.txt .
+RUN pip install --no-cache-dir --user -r requirements.sandbox.txt
+
+# Default command for the container
+CMD ["python"]
