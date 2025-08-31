@@ -8,7 +8,7 @@ on:
 env:
   ECR_REPOSITORY_FRONTEND: davi-frontend
   ECR_REPOSITORY_BACKEND: davi-backend
-    ECR_REPOSITORY_SANDBOX: davi-sandbox
+  ECR_REPOSITORY_SANDBOX: davi-sandbox
   ECS_SERVICE: davi-service
   ECS_CLUSTER: davi-cluster
   ECS_TASK_DEFINITION_TEMPLATE: ecs/task-definition.json
