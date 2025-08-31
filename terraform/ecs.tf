@@ -93,10 +93,14 @@ resource "aws_ecs_task_definition" "davi_task" {
         }
       ],
       environment = [
-        {
-          name  = "GOOGLE_API_KEY"
-          value = var.gemini_api_key
-        }
+        { name = "GOOGLE_API_KEY", value = var.gemini_api_key },
+        { name = "EXECUTION_MODE", value = "aws" },
+        { name = "AWS_REGION", value = var.aws_region },
+        { name = "ECS_CLUSTER_NAME", value = aws_ecs_cluster.davi_cluster.name },
+        { name = "S3_BUCKET_NAME", value = aws_s3_bucket.davi_sandbox_temp_storage.bucket },
+        { name = "SANDBOX_TASK_DEFINITION_ARN", value = aws_ecs_task_definition.davi_sandbox_task.arn },
+        { name = "SUBNET_IDS", value = join(",", [aws_subnet.davi_public_subnet_1.id, aws_subnet.davi_public_subnet_2.id]) },
+        { name = "SECURITY_GROUP_IDS", value = aws_security_group.davi_service_sg.id }
       ],
       logConfiguration = {
         logDriver = "awslogs"
@@ -166,4 +170,69 @@ resource "aws_ecs_service" "davi_service" {
   tags = {
     Name = "${var.project_name}-service"
   }
+}
+
+# 6. IAM Policy to allow the main task to run sandbox tasks and use S3
+resource "aws_iam_policy" "davi_task_permissions" {
+  name        = "${var.project_name}-task-permissions-policy"
+  description = "Allows the main davi task to run sandbox tasks and use the temp S3 bucket."
+
+  policy = jsonencode({
+    Version   = "2012-10-17",
+    Statement = [
+      {
+        Effect   = "Allow",
+        Action   = "ecs:RunTask",
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow",
+        Action   = "iam:PassRole",
+        Resource = aws_iam_role.ecs_task_execution_role.arn
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject"
+        ],
+        Resource = "${aws_s3_bucket.davi_sandbox_temp_storage.arn}/*"
+      }
+    ]
+  })
+}
+
+# 7. Attach the new policy to the main task's role
+resource "aws_iam_role_policy_attachment" "davi_task_attach_custom_policy" {
+  role       = aws_iam_role.ecs_task_execution_role.name
+  policy_arn = aws_iam_policy.davi_task_permissions.arn
+}
+
+# 8. Create a separate Task Definition for the Sandbox
+resource "aws_ecs_task_definition" "davi_sandbox_task" {
+  family                   = "${var.project_name}-sandbox-task"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = "256"  # Smaller size for sandbox
+  memory                   = "512"  # Smaller size for sandbox
+  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
+  task_role_arn            = aws_iam_role.ecs_task_execution_role.arn # Grant the task itself permissions
+
+  container_definitions = jsonencode([
+    {
+      name      = "${var.project_name}-sandbox"
+      image     = "${aws_ecr_repository.davi_sandbox_ecr.repository_url}:latest"
+      essential = true
+      command   = ["python", "src/sandbox_runner.py"]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.davi_log_group.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "sandbox"
+        }
+      }
+    }
+  ])
 }
