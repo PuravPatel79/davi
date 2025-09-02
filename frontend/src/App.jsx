@@ -144,9 +144,12 @@ const styles = {
   },
 };
 
-const socket = io(); // Initialize socket connection
+// Initialize socket but do not auto-connect
+const socket = io({ autoConnect: false });
 
 function App() {
+  // Add state to hold the execution mode from the backend
+  const [executionMode, setExecutionMode] = useState(null);
   const [sessionId, setSessionId] = useState(null);
   const [dataInfo, setDataInfo] = useState(null);
   const [datasetUrl, setDatasetUrl] = useState('');
@@ -157,16 +160,33 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // New state for code execution mode
+  // State for code execution mode
   const [sandboxSessionId, setSandboxSessionId] = useState(null);
   const [code, setCode] = useState('');
   const [executionResult, setExecutionResult] = useState(null);
   const [isExecuting, setIsExecuting] = useState(false);
 
-  // WebSocket Connection Handling
+  // Fetch the configuration from the backend when the app loads
   useEffect(() => {
-    if (sandboxSessionId) {
-      console.log("Establishing WebSocket connection...");
+    const fetchConfig = async () => {
+      try {
+        const res = await fetch('/api/config');
+        const config = await res.json();
+        setExecutionMode(config.execution_mode);
+        console.log("Execution mode set to:", config.execution_mode);
+      } catch (err) {
+        console.error("Failed to fetch server config:", err);
+        setError("Could not connect to the backend service.");
+      }
+    };
+    fetchConfig();
+  }, []);
+
+  // Make the WebSocket connection conditional on being in 'local' mode
+  useEffect(() => {
+    // Only set up WebSockets if we are in local mode and have a sandbox session
+    if (executionMode === 'local' && sandboxSessionId) {
+      console.log("Local mode: Establishing WebSocket connection...");
       
       socket.on('connect', () => {
         console.log('Socket connected!');
@@ -190,17 +210,17 @@ function App() {
       }
 
     } else if (socket.connected) {
-        console.log("Sandbox session ended, disconnecting socket.");
+        console.log("Sandbox session ended or in AWS mode, disconnecting socket.");
         socket.disconnect();
     }
     
     return () => {
-      if (socket.connected) {
-        console.log("Cleaning up WebSocket connection.");
-        socket.disconnect();
-      }
+      // Cleanup listener when component unmounts or dependencies change
+      socket.off('connect');
+      socket.off('code_result');
+      socket.off('disconnect');
     };
-  }, [sandboxSessionId]);
+  }, [executionMode, sandboxSessionId]);
 
 
   const handleLoadData = async (event) => {
@@ -247,7 +267,9 @@ function App() {
     setExecutionResult(null);
 
     try {
-      if (mode === 'code_execution') {
+      // Branch the logic based on the environment for code execution
+      if (mode === 'code_execution' && executionMode === 'local') {
+        // LOCAL: Use the interactive WebSocket flow
         const res = await fetch('/api/execute/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -261,6 +283,7 @@ function App() {
         setExecutionResult(data.initial_result.output || { type: 'text', data: data.initial_result.error });
 
       } else {
+        // AWS: Use a single synchronous HTTP request
         setSandboxSessionId(null);
         const res = await fetch('/api/analyze', {
           method: 'POST',
@@ -330,7 +353,7 @@ function App() {
         return <pre style={styles.editorOutput}>{executionResult.data}</pre>;
     }
 
-    return <pre style={{...styles.editorOutput, color: 'red'}}>{executionResult.data || executionResult}</pre>;
+    return <pre style={{...styles.editorOutput, color: 'red'}}>{String(executionResult.data || executionResult)}</pre>;
   }
 
   const renderResults = () => {
@@ -341,7 +364,8 @@ function App() {
       return <div style={styles.error}>Error: {error}</div>;
     }
     
-    if (mode === 'code_execution' && sandboxSessionId) {
+    // Conditionally render the interactive editor ONLY for local mode
+    if (mode === 'code_execution' && executionMode === 'local' && sandboxSessionId) {
         return (
             <div>
                 <h3 style={styles.h3}>Interactive Code Editor</h3>

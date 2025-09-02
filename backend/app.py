@@ -1,4 +1,3 @@
-# backend/app.py
 import json
 import sys
 import os
@@ -6,20 +5,27 @@ import uuid
 import redis
 import pandas as pd
 import pickle
+import io
+import boto3
+import traceback
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 
-# --- More robust path handling ---
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 sys.path.append(os.path.join(BASE_DIR, 'src'))
 
-# --- Import all necessary classes ---
 from agent import DataAnalysisAgent
 from data_processor import DataProcessor
 from visualizer import Visualizer
-from sandbox_exec import SandboxExecutor
+
+EXECUTION_MODE = os.getenv("EXECUTION_MODE", "local")
+
+if EXECUTION_MODE == "aws":
+    from sandbox_exec_aws import SandboxExecutorAWS as SandboxExecutor
+else:
+    from sandbox_exec import SandboxExecutor
 
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
@@ -101,8 +107,8 @@ def analyze():
     session_id = data['session_id']
     mode = data.get('mode', 'informational') # Defaults to 'informational' mode
 
-    if mode == 'code_execution':
-        return jsonify({"error": "Code execution mode must be initiated via the /execute/start endpoint."}), 400
+    if mode == 'code_execution' and EXECUTION_MODE == 'aws':
+        return handle_aws_code_execution(session_id, user_query)
 
     serialized_df = redis_client.get(session_id)
     if serialized_df is None:
@@ -129,6 +135,45 @@ def analyze():
         print(f"An error occurred in /analyze endpoint: {e}")
         return jsonify({"error": "An internal server error occurred."}), 500
     
+def handle_aws_code_execution(session_id, query):
+    """Handles the synchronous code execution flow for the AWS environment."""
+    try:
+        serialized_df = redis_client.get(session_id)
+        if not serialized_df:
+            return jsonify({"error": "Invalid or expired session."}), 400
+        df = pickle.loads(serialized_df)
+
+        data_processor = DataProcessor()
+        data_processor.dataframe = df
+        data_processor._extract_metadata()
+        agent = DataAnalysisAgent(data_processor, None)
+        initial_code_response = agent.process_query(query, mode="code_execution")
+        initial_code = initial_code_response['message']
+
+        s3_client = boto3.client('s3', region_name=os.getenv("AWS_REGION"))
+        s3_bucket = os.getenv("S3_BUCKET_NAME")
+        data_s3_key = f"data/{session_id}/data.csv"
+
+        with io.StringIO() as csv_buffer:
+            df.to_csv(csv_buffer, index=False)
+            s3_client.put_object(Bucket=s3_bucket, Key=data_s3_key, Body=csv_buffer.getvalue())
+
+        result = sandbox_executor.execute_code(session_id, initial_code, data_s3_key)
+
+        if 'error' in result and result['error']:
+            return jsonify({"success": False, "message": result['error']})
+
+        output_data = result.get('output', {})
+        if output_data.get('type') == 'visualization':
+            return jsonify({"success": True, "visualization": output_data.get('data')})
+        else:
+            return jsonify({"success": True, "data": [{"output": output_data.get('data', '')}]})
+
+    except Exception as e:
+        print(f"An error occurred in handle_aws_code_execution: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "An internal server error occurred during AWS code execution."}), 500
+
 # Endpoint for Dynamic Analysis (Direct Code Execution mode)
 
 @app.route('/execute/start', methods=['POST'])
