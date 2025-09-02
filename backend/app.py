@@ -58,6 +58,11 @@ STRIKE_LIMIT = 3
 def home():
     return "Yo! This is the davi - API."
 
+@app.route('/config')
+def get_config():
+    """Provides frontend with the server's current execution mode."""
+    return jsonify({"execution_mode": EXECUTION_MODE})
+
 @app.route('/load', methods=['POST'])
 def load():
     if not redis_client:
@@ -223,7 +228,7 @@ def execute_start():
         "initial_result": initial_result
     })
     
-# --- WebSocket Event Handlers for Interactive Visuals ---
+# WebSocket Event Handlers for Interactive Visuals
 
 @socketio.on('connect')
 def handle_connect():
