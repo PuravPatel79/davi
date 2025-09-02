@@ -514,10 +514,12 @@ function App() {
                   <input type="radio" value="sql" checked={mode === 'sql'} onChange={(e) => setMode(e.target.value)} />
                   NLP to SQL
                 </label>
-                <label>
-                  <input type="radio" value="code_execution" checked={mode === 'code_execution'} onChange={(e) => setMode(e.target.value)} />
-                  Direct Code Execution
-                </label>
+                {executionMode && (
+                    <label>
+                        <input type="radio" value="code_execution" checked={mode === 'code_execution'} onChange={(e) => setMode(e.target.value)} />
+                        Direct Code Execution
+                    </label>
+                )}
               </div>
 
               <form onSubmit={handleAnalyze} style={styles.form}>
