@@ -7,7 +7,7 @@ resource "aws_lb" "davi_alb" {
   security_groups    = [aws_security_group.davi_lb_sg.id] # Attach the public-facing firewall
   subnets            = [aws_subnet.davi_public_subnet_1.id, aws_subnet.davi_public_subnet_2.id] # Place it in our public subnets
 
-  idle_timeout = 180
+  idle_timeout = 300
 
   # Enable access logs for the load balancer for monitoring and debugging
   access_logs {
